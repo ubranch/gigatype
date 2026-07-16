@@ -914,7 +914,7 @@ whats_new_last_seen_version?: string; selected_model?: string; onboarding_comple
 overlay_style?: OverlayStyle }
 export type AudioDevice = { index: string; name: string; is_default: boolean }
 export type AutoSubmitKey = "enter" | "ctrl_enter" | "cmd_enter"
-export type AvailableAccelerators = { transcribe: string[]; ort: string[]; gpu_devices: GpuDeviceOption[] }
+export type AvailableAccelerators = { transcribe: string[]; ort: OrtAcceleratorDiagnostic[]; ort_requested: string; ort_selected: string; ort_fallback_reason: string | null; gpu_devices: GpuDeviceOption[] }
 export type BindingResponse = { success: boolean; binding: ShortcutBinding | null; error: string | null }
 export type ClipboardHandling = "dont_modify" | "copy_to_clipboard"
 export type CustomSounds = { start: boolean; stop: boolean }
@@ -928,6 +928,7 @@ export type EngineType =
 export type GpuDeviceOption = { id: number; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
+export type HuggingFaceBundleFile = { remote_filename: string; local_filename: string; size_bytes: number; sha256: string }
 /**
  * Result of changing keyboard implementation
  */
@@ -961,12 +962,18 @@ sha256: string | null } } |
  */
 { HuggingFace: { repo_id: string; revision: string } } | 
 /**
+ * A commit-pinned set of files fetched through the shared Hugging Face
+ * cache and materialized as one Handy-owned model directory.
+ */
+{ HuggingFaceBundle: { repo_id: string; revision: string; files: HuggingFaceBundleFile[] } } |
+/**
  * Already present on disk — a user-provided custom model, or one discovered
  * in a shared cache. Nothing to download.
  */
 "Local"
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
 export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
+export type OrtAcceleratorDiagnostic = { id: string; compiled: boolean; usable: boolean; reason: string | null }
 export type OverlayPosition = "top" | "bottom"
 /**
  * Which recording overlay to display. `Minimal` and `Live` share one base

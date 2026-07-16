@@ -16,6 +16,9 @@ src-tauri/gen
 src/bindings.ts
 src-tauri/src/catalog/catalog.json
 
+# Local agent orchestration
+.supergoal
+
 # Misc
 .DS_Store
 *.log

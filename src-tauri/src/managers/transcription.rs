@@ -1165,7 +1165,6 @@ impl TranscriptionManager {
         // run extension and the fuzzy-correction skip are gated on
         // `model_is_whisper` instead, since non-whisper archs can advertise
         // the feature while rejecting the whisper-kind extension.
-        let mut model_takes_initial_prompt = false;
         // Whether the loaded model is actually whisper-family (arch string).
         // Non-whisper archs (e.g. Voxtral Small) can advertise
         // Feature::InitialPrompt yet reject the whisper-kind run extension
@@ -1204,7 +1203,7 @@ impl TranscriptionManager {
             if let LoadedEngine::TranscribeCpp(session) = &engine {
                 let model = session.model();
                 let caps = model.capabilities();
-                model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
+                let model_takes_initial_prompt = model.supports(Feature::InitialPrompt);
                 model_is_whisper = model.arch() == "whisper";
                 model_supports_translate = caps.supports_translate;
                 model_languages = caps.languages;
@@ -1810,8 +1809,6 @@ fn resolve_gpu_device(setting: TranscribeAcceleratorSetting, gpu_device: i32) ->
 /// chosen at model-load time from [`select_transcribe_backend`], so changing the
 /// accelerator only needs a model reload (see `reload_model_on_next_use`).
 pub fn apply_accelerator_settings(app: &tauri::AppHandle) {
-    use transcribe_rs::accel;
-
     let settings = get_settings(app);
 
     info!(
@@ -1819,15 +1816,243 @@ pub fn apply_accelerator_settings(app: &tauri::AppHandle) {
         settings.transcribe_accelerator
     );
 
-    let ort_pref = match settings.ort_accelerator {
-        OrtAcceleratorSetting::Auto => accel::OrtAccelerator::Auto,
-        OrtAcceleratorSetting::Cpu => accel::OrtAccelerator::CpuOnly,
-        OrtAcceleratorSetting::Cuda => accel::OrtAccelerator::Cuda,
-        OrtAcceleratorSetting::DirectMl => accel::OrtAccelerator::DirectMl,
-        OrtAcceleratorSetting::Rocm => accel::OrtAccelerator::Rocm,
+    let process_override = ORT_ACCELERATOR_OVERRIDE
+        .get()
+        .and_then(|slot| *slot.lock().unwrap_or_else(|error| error.into_inner()));
+    let (requested, strict) =
+        effective_ort_accelerator_preference(settings.ort_accelerator, process_override);
+    if process_override.is_some() {
+        info!("Using process-only ORT accelerator override: {requested:?}");
+    }
+
+    match apply_ort_accelerator_preference(requested, strict) {
+        Ok(report) => {
+            if let Some(reason) = &report.fallback_reason {
+                warn!("ORT auto fallback selected {}: {}", report.selected, reason);
+            } else {
+                info!("ORT accelerator set to: {}", report.selected);
+            }
+        }
+        Err(reason) => error!("ORT accelerator selection failed: {}", reason),
+    }
+}
+
+const CUDA_NOT_COMPILED_REASON: &str = "CUDA support is not compiled into this build";
+const CUDA_REGISTRATION_FAILURE_REASON: &str = "CUDAExecutionProvider registration failed: required app-local CUDA 13 or cuDNN runtime component is unavailable";
+
+#[derive(Serialize, Clone, Debug, Type, PartialEq, Eq)]
+pub struct OrtAcceleratorDiagnostic {
+    pub id: String,
+    pub compiled: bool,
+    pub usable: bool,
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ResolvedOrtAccelerator {
+    selected: transcribe_rs::OrtAccelerator,
+    fallback_reason: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+struct OrtSelectionReport {
+    requested: String,
+    selected: String,
+    fallback_reason: Option<String>,
+}
+
+static CUDA_DIAGNOSTIC: OnceLock<OrtAcceleratorDiagnostic> = OnceLock::new();
+static ORT_SELECTION_REPORT: OnceLock<Mutex<OrtSelectionReport>> = OnceLock::new();
+static ORT_ACCELERATOR_OVERRIDE: OnceLock<Mutex<Option<OrtAcceleratorSetting>>> = OnceLock::new();
+
+fn cuda_diagnostic_from_probe(
+    compiled: bool,
+    probe_result: std::result::Result<(), String>,
+) -> OrtAcceleratorDiagnostic {
+    let (usable, reason) = match (compiled, probe_result) {
+        (false, _) => (false, Some(CUDA_NOT_COMPILED_REASON.to_string())),
+        (true, Ok(())) => (true, None),
+        (true, Err(reason)) => (false, Some(reason)),
     };
-    accel::set_ort_accelerator(ort_pref);
-    info!("ORT accelerator set to: {}", ort_pref);
+
+    OrtAcceleratorDiagnostic {
+        id: "cuda".to_string(),
+        compiled,
+        usable,
+        reason,
+    }
+}
+
+#[cfg(all(feature = "ort-cuda", target_os = "windows", target_arch = "x86_64"))]
+fn probe_cuda_registration() -> std::result::Result<(), String> {
+    use ort::ep::CUDA;
+    use ort::session::Session;
+
+    const REQUIRED_APP_LOCAL_COMPONENTS: &[&str] = &[
+        "onnxruntime_providers_shared.dll",
+        "onnxruntime_providers_cuda.dll",
+        "cublasLt64_13.dll",
+        "cublas64_13.dll",
+        "cudart64_13.dll",
+        "cufft64_12.dll",
+        "cudnn64_9.dll",
+        "nvrtc64_130_0.dll",
+        "nvJitLink_130_0.dll",
+    ];
+    if let Some(executable_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(std::path::Path::to_path_buf))
+    {
+        if let Some(component) = REQUIRED_APP_LOCAL_COMPONENTS
+            .iter()
+            .find(|component| !executable_dir.join(component).is_file())
+        {
+            return Err(format!(
+                "CUDAExecutionProvider registration failed: missing app-local component {component}"
+            ));
+        }
+    }
+
+    let builder = Session::builder().map_err(|_| CUDA_REGISTRATION_FAILURE_REASON.to_string())?;
+    builder
+        .with_execution_providers([CUDA::default().build().error_on_failure()])
+        .map(|_| ())
+        .map_err(|_| CUDA_REGISTRATION_FAILURE_REASON.to_string())
+}
+
+fn runtime_cuda_diagnostic() -> &'static OrtAcceleratorDiagnostic {
+    CUDA_DIAGNOSTIC.get_or_init(|| {
+        let compiled = cfg!(all(
+            feature = "ort-cuda",
+            target_os = "windows",
+            target_arch = "x86_64"
+        ));
+
+        #[cfg(all(feature = "ort-cuda", target_os = "windows", target_arch = "x86_64"))]
+        let probe_result = probe_cuda_registration();
+        #[cfg(not(all(feature = "ort-cuda", target_os = "windows", target_arch = "x86_64")))]
+        let probe_result = Err(CUDA_NOT_COMPILED_REASON.to_string());
+
+        let diagnostic = cuda_diagnostic_from_probe(compiled, probe_result);
+        if diagnostic.usable {
+            log::info!("CUDAExecutionProvider registration probe succeeded");
+        } else {
+            log::warn!(
+                "CUDAExecutionProvider registration probe unavailable: {}",
+                diagnostic.reason.as_deref().unwrap_or("unknown reason")
+            );
+        }
+        diagnostic
+    })
+}
+
+fn resolve_ort_accelerator(
+    requested: OrtAcceleratorSetting,
+    cuda: &OrtAcceleratorDiagnostic,
+) -> std::result::Result<ResolvedOrtAccelerator, String> {
+    use transcribe_rs::OrtAccelerator;
+
+    match requested {
+        OrtAcceleratorSetting::Auto => Ok(if cuda.usable {
+            ResolvedOrtAccelerator {
+                selected: OrtAccelerator::Cuda,
+                fallback_reason: None,
+            }
+        } else {
+            ResolvedOrtAccelerator {
+                selected: OrtAccelerator::CpuOnly,
+                fallback_reason: cuda.reason.clone(),
+            }
+        }),
+        OrtAcceleratorSetting::Cpu => Ok(ResolvedOrtAccelerator {
+            selected: OrtAccelerator::CpuOnly,
+            fallback_reason: None,
+        }),
+        OrtAcceleratorSetting::Cuda if cuda.usable => Ok(ResolvedOrtAccelerator {
+            selected: OrtAccelerator::Cuda,
+            fallback_reason: None,
+        }),
+        OrtAcceleratorSetting::Cuda => Err(cuda
+            .reason
+            .clone()
+            .unwrap_or_else(|| CUDA_REGISTRATION_FAILURE_REASON.to_string())),
+        OrtAcceleratorSetting::DirectMl => resolve_compiled_ort_accelerator(
+            OrtAccelerator::DirectMl,
+            "DirectML support is not compiled into this build",
+        ),
+        OrtAcceleratorSetting::Rocm => resolve_compiled_ort_accelerator(
+            OrtAccelerator::Rocm,
+            "ROCm support is not compiled into this build",
+        ),
+    }
+}
+
+fn resolve_compiled_ort_accelerator(
+    requested: transcribe_rs::OrtAccelerator,
+    unavailable_reason: &str,
+) -> std::result::Result<ResolvedOrtAccelerator, String> {
+    if transcribe_rs::OrtAccelerator::available().contains(&requested) {
+        Ok(ResolvedOrtAccelerator {
+            selected: requested,
+            fallback_reason: None,
+        })
+    } else {
+        Err(unavailable_reason.to_string())
+    }
+}
+
+fn setting_name(setting: OrtAcceleratorSetting) -> &'static str {
+    match setting {
+        OrtAcceleratorSetting::Auto => "auto",
+        OrtAcceleratorSetting::Cpu => "cpu",
+        OrtAcceleratorSetting::Cuda => "cuda",
+        OrtAcceleratorSetting::DirectMl => "directml",
+        OrtAcceleratorSetting::Rocm => "rocm",
+    }
+}
+
+fn effective_ort_accelerator_preference(
+    persisted: OrtAcceleratorSetting,
+    process_override: Option<OrtAcceleratorSetting>,
+) -> (OrtAcceleratorSetting, bool) {
+    process_override
+        .map(|requested| (requested, true))
+        .unwrap_or((persisted, false))
+}
+
+fn apply_ort_accelerator_preference(
+    requested: OrtAcceleratorSetting,
+    strict: bool,
+) -> std::result::Result<OrtSelectionReport, String> {
+    let resolved = match resolve_ort_accelerator(requested, runtime_cuda_diagnostic()) {
+        Ok(resolved) => resolved,
+        Err(reason) if strict => return Err(reason),
+        Err(reason) => ResolvedOrtAccelerator {
+            selected: transcribe_rs::OrtAccelerator::CpuOnly,
+            fallback_reason: Some(reason),
+        },
+    };
+
+    transcribe_rs::set_ort_accelerator(resolved.selected);
+    let report = OrtSelectionReport {
+        requested: setting_name(requested).to_string(),
+        selected: resolved.selected.to_string(),
+        fallback_reason: resolved.fallback_reason,
+    };
+    let report_slot = ORT_SELECTION_REPORT.get_or_init(|| Mutex::new(report.clone()));
+    *report_slot
+        .lock()
+        .unwrap_or_else(|error| error.into_inner()) = report.clone();
+    Ok(report)
+}
+
+pub fn apply_ort_accelerator_override(
+    requested: OrtAcceleratorSetting,
+) -> std::result::Result<(), String> {
+    apply_ort_accelerator_preference(requested, true)?;
+    let slot = ORT_ACCELERATOR_OVERRIDE.get_or_init(|| Mutex::new(None));
+    *slot.lock().unwrap_or_else(|error| error.into_inner()) = Some(requested);
+    Ok(())
 }
 
 #[derive(Serialize, Clone, Debug, Type)]
@@ -1865,25 +2090,113 @@ fn cached_gpu_devices() -> &'static [GpuDeviceOption] {
 #[derive(Serialize, Clone, Debug, Type)]
 pub struct AvailableAccelerators {
     pub transcribe: Vec<String>,
-    pub ort: Vec<String>,
+    pub ort: Vec<OrtAcceleratorDiagnostic>,
+    pub ort_requested: String,
+    pub ort_selected: String,
+    pub ort_fallback_reason: Option<String>,
     pub gpu_devices: Vec<GpuDeviceOption>,
+}
+
+#[cfg(test)]
+fn available_ort_accelerator_names() -> Vec<String> {
+    ort_accelerator_diagnostics()
+        .into_iter()
+        .filter(|diagnostic| diagnostic.usable)
+        .map(|diagnostic| diagnostic.id)
+        .collect()
+}
+
+fn ort_accelerator_diagnostics() -> Vec<OrtAcceleratorDiagnostic> {
+    let mut diagnostics = vec![
+        OrtAcceleratorDiagnostic {
+            id: "auto".to_string(),
+            compiled: true,
+            usable: true,
+            reason: None,
+        },
+        OrtAcceleratorDiagnostic {
+            id: "cpu".to_string(),
+            compiled: true,
+            usable: true,
+            reason: None,
+        },
+        runtime_cuda_diagnostic().clone(),
+    ];
+
+    for accelerator in transcribe_rs::OrtAccelerator::available() {
+        let id = accelerator.to_string();
+        if id != "cpu" && id != "cuda" {
+            diagnostics.push(OrtAcceleratorDiagnostic {
+                id,
+                compiled: true,
+                usable: true,
+                reason: None,
+            });
+        }
+    }
+
+    diagnostics
 }
 
 /// Return which accelerators are compiled into this build.
 pub fn get_available_accelerators() -> AvailableAccelerators {
-    use transcribe_rs::accel::OrtAccelerator;
-
-    let ort_options: Vec<String> = OrtAccelerator::available()
-        .into_iter()
-        .map(|a| a.to_string())
-        .collect();
-
     let transcribe_options = vec!["auto".to_string(), "cpu".to_string(), "gpu".to_string()];
+    let current = transcribe_rs::get_ort_accelerator().to_string();
+    let report = ORT_SELECTION_REPORT
+        .get()
+        .map(|slot| {
+            slot.lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .clone()
+        })
+        .unwrap_or(OrtSelectionReport {
+            requested: current.clone(),
+            selected: current,
+            fallback_reason: None,
+        });
 
     AvailableAccelerators {
         transcribe: transcribe_options,
-        ort: ort_options,
+        ort: ort_accelerator_diagnostics(),
+        ort_requested: report.requested,
+        ort_selected: report.selected,
+        ort_fallback_reason: report.fallback_reason,
         gpu_devices: cached_gpu_devices().to_vec(),
+    }
+}
+
+impl Drop for TranscriptionManager {
+    fn drop(&mut self) {
+        // Skip shutdown unless this is the very last clone. TranscriptionManager
+        // is cloned by initiate_model_load() and the watcher thread — those
+        // clones dropping must not kill the watcher. The watcher thread holds
+        // its own clone, so engine's strong_count is always >= 2 while the
+        // watcher is alive. When it reaches 1, only this instance remains
+        // and we can safely shut down.
+        if Arc::strong_count(&self.engine) > 1 {
+            return;
+        }
+
+        // Signal the watcher thread to shutdown
+        self.shutdown_signal.store(true, Ordering::Relaxed);
+
+        // Wait for the thread to finish gracefully.
+        // Use match instead of unwrap to avoid panicking if the mutex is
+        // poisoned — a panic inside Drop calls abort().
+        let mut guard = match self.watcher_handle.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                warn!("Recovered poisoned watcher_handle mutex during TranscriptionManager drop — a panic occurred earlier this session");
+                e.into_inner()
+            }
+        };
+        if let Some(handle) = guard.take() {
+            if let Err(e) = handle.join() {
+                warn!("Failed to join idle watcher thread: {:?}", e);
+            } else {
+                debug!("Idle watcher thread joined successfully");
+            }
+        }
     }
 }
 
@@ -1930,39 +2243,71 @@ mod tests {
         assert_eq!(plan.language.as_deref(), Some("es"));
         assert_eq!(plan.target_language, None);
     }
-}
 
-impl Drop for TranscriptionManager {
-    fn drop(&mut self) {
-        // Skip shutdown unless this is the very last clone. TranscriptionManager
-        // is cloned by initiate_model_load() and the watcher thread — those
-        // clones dropping must not kill the watcher. The watcher thread holds
-        // its own clone, so engine's strong_count is always >= 2 while the
-        // watcher is alive. When it reaches 1, only this instance remains
-        // and we can safely shut down.
-        if Arc::strong_count(&self.engine) > 1 {
-            return;
-        }
+    #[test]
+    fn default_build_exposes_cpu_ort_accelerators_only() {
+        let accelerators = available_ort_accelerator_names();
 
-        // Signal the watcher thread to shutdown
-        self.shutdown_signal.store(true, Ordering::Relaxed);
+        assert!(accelerators.iter().any(|value| value == "auto"));
+        assert!(accelerators.iter().any(|value| value == "cpu"));
+        assert!(!accelerators.iter().any(|value| value == "cuda"));
+    }
 
-        // Wait for the thread to finish gracefully.
-        // Use match instead of unwrap to avoid panicking if the mutex is
-        // poisoned — a panic inside Drop calls abort().
-        let mut guard = match self.watcher_handle.lock() {
-            Ok(g) => g,
-            Err(e) => {
-                warn!("Recovered poisoned watcher_handle mutex during TranscriptionManager drop — a panic occurred earlier this session");
-                e.into_inner()
-            }
-        };
-        if let Some(handle) = guard.take() {
-            if let Err(e) = handle.join() {
-                warn!("Failed to join idle watcher thread: {:?}", e);
-            } else {
-                debug!("Idle watcher thread joined successfully");
-            }
-        }
+    #[test]
+    fn cuda_probe_distinguishes_compiled_off_success_and_failure() {
+        let compiled_off = cuda_diagnostic_from_probe(false, Ok(()));
+        assert!(!compiled_off.compiled);
+        assert!(!compiled_off.usable);
+        assert!(compiled_off.reason.unwrap().contains("not compiled"));
+
+        let success = cuda_diagnostic_from_probe(true, Ok(()));
+        assert!(success.compiled);
+        assert!(success.usable);
+        assert_eq!(success.reason, None);
+
+        let failure_reason = "CUDAExecutionProvider registration failed: missing app-local component onnxruntime_providers_cuda.dll".to_string();
+        let failure = cuda_diagnostic_from_probe(true, Err(failure_reason.clone()));
+        assert!(failure.compiled);
+        assert!(!failure.usable);
+        assert_eq!(failure.reason.as_deref(), Some(failure_reason.as_str()));
+    }
+
+    #[test]
+    fn explicit_cuda_fails_when_probe_failed() {
+        let cuda = cuda_diagnostic_from_probe(
+            true,
+            Err("CUDAExecutionProvider registration failed: missing app-local component onnxruntime_providers_cuda.dll".to_string()),
+        );
+
+        let error = resolve_ort_accelerator(OrtAcceleratorSetting::Cuda, &cuda).unwrap_err();
+
+        assert!(error.contains("CUDAExecutionProvider registration failed"));
+    }
+
+    #[test]
+    fn auto_falls_back_to_cpu_and_reports_reason() {
+        let cuda = cuda_diagnostic_from_probe(
+            true,
+            Err("CUDAExecutionProvider registration failed: missing app-local component onnxruntime_providers_cuda.dll".to_string()),
+        );
+
+        let resolved = resolve_ort_accelerator(OrtAcceleratorSetting::Auto, &cuda).unwrap();
+
+        assert_eq!(resolved.selected, transcribe_rs::OrtAccelerator::CpuOnly);
+        assert!(resolved
+            .fallback_reason
+            .unwrap()
+            .contains("CUDAExecutionProvider registration failed"));
+    }
+
+    #[test]
+    fn headless_ort_override_survives_model_load_settings_refresh() {
+        let (requested, strict) = effective_ort_accelerator_preference(
+            OrtAcceleratorSetting::Auto,
+            Some(OrtAcceleratorSetting::Cpu),
+        );
+
+        assert_eq!(requested, OrtAcceleratorSetting::Cpu);
+        assert!(strict);
     }
 }

@@ -1,5 +1,12 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
+
+#[derive(ValueEnum, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CliOrtAccelerator {
+    Auto,
+    Cpu,
+    Cuda,
+}
 
 #[derive(Parser, Debug, Clone, Default)]
 #[command(name = "handy", about = "Handy - Speech to Text")]
@@ -48,6 +55,14 @@ pub struct CliArgs {
     #[arg(long)]
     pub list_devices: bool,
 
+    /// List ONNX Runtime accelerator diagnostics and exit. Honors --json.
+    #[arg(long)]
+    pub list_accelerators: bool,
+
+    /// Override ONNX Runtime acceleration for this headless process only.
+    #[arg(long, value_enum, value_name = "auto|cpu|cuda")]
+    pub ort_accelerator: Option<CliOrtAccelerator>,
+
     /// List the available models (with ids) and exit. Pass an id to --model.
     /// Honors --json for machine-readable output.
     #[arg(long)]
@@ -57,7 +72,43 @@ pub struct CliArgs {
     #[arg(long, value_name = "N")]
     pub repeat: Option<usize>,
 
-    /// Emit --transcribe-file results as JSON.
+    /// Emit headless command results as JSON.
     #[arg(long)]
     pub json: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::error::ErrorKind;
+
+    #[test]
+    fn parses_headless_ort_accelerator_override() {
+        let args = CliArgs::try_parse_from([
+            "handy",
+            "--list-accelerators",
+            "--ort-accelerator",
+            "cuda",
+            "--json",
+        ])
+        .unwrap();
+
+        assert!(args.list_accelerators);
+        assert_eq!(args.ort_accelerator, Some(CliOrtAccelerator::Cuda));
+        assert!(args.json);
+    }
+
+    #[test]
+    fn rejects_unknown_ort_accelerator_with_usage_exit_code() {
+        let error = CliArgs::try_parse_from([
+            "handy",
+            "--list-accelerators",
+            "--ort-accelerator",
+            "vulkan",
+        ])
+        .unwrap_err();
+
+        assert_eq!(error.kind(), ErrorKind::InvalidValue);
+        assert_eq!(error.exit_code(), 2);
+    }
 }

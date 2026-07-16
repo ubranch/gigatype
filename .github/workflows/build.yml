@@ -47,6 +47,10 @@ on:
         required: false
         type: boolean
         default: false
+      cuda:
+        required: false
+        type: boolean
+        default: false
 
 env:
   TSC_VERSION: "0.9.0"
@@ -252,7 +256,18 @@ jobs:
           if [[ -n "${{ inputs.asset-prefix }}" ]]; then
             patched_platform="${{ inputs.asset-prefix }}_${patched_platform}"
           fi
+          if [[ "${{ inputs.cuda }}" == "true" ]]; then
+            patched_platform="${patched_platform}_cuda13"
+          fi
           echo "platform=${patched_platform}" >> $GITHUB_OUTPUT
+
+      - name: Validate CUDA build target
+        if: inputs.cuda
+        shell: pwsh
+        run: |
+          if (-not "${{ inputs.platform }}".Contains("windows") -or "${{ inputs.target }}" -like "aarch64*") {
+            throw "CUDA edition supports Windows x64 only"
+          }
 
       # ggml refuses to build its ARM CPU backend under MSVC (upstream check in
       # ggml/src/ggml-cpu/CMakeLists.txt: "MSVC is not supported for ARM, use
@@ -409,7 +424,7 @@ jobs:
       # NOTE: sourced from Microsoft's GitHub release; can be re-hosted on
       # blob.handy.computer to match the macOS/Linux steps.
       - name: Install ONNX Runtime (Windows x64)
-        if: contains(inputs.platform, 'windows') && !contains(inputs.target, 'aarch64')
+        if: contains(inputs.platform, 'windows') && !contains(inputs.target, 'aarch64') && !inputs.cuda
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -421,6 +436,14 @@ jobs:
           Write-Host "ORT_LIB_LOCATION=$ortLib"
           Add-Content -Path $env:GITHUB_ENV -Value "ORT_LIB_LOCATION=$ortLib"
           Add-Content -Path $env:GITHUB_ENV -Value "ORT_PREFER_DYNAMIC_LINK=1"
+
+      - name: Prepare ONNX Runtime CUDA 13 closure (Windows x64)
+        if: contains(inputs.platform, 'windows') && !contains(inputs.target, 'aarch64') && inputs.cuda
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & "scripts/build-windows-cuda.ps1" -Mode Prepare -GithubEnvironment $env:GITHUB_ENV -Json | Out-Host
+          if ($LASTEXITCODE -ne 0) { throw "CUDA runtime preparation failed" }
 
       # ggml-vulkan (built by transcribe-cpp-sys when the Vulkan backend is on)
       # does `find_package(SPIRV-Headers CONFIG REQUIRED)` for <spirv-headers/
@@ -510,7 +533,7 @@ jobs:
           releaseName: ${{ inputs.release-id && format('v{0}', steps.get-version.outputs.version) || '' }}
           releaseId: ${{ inputs.release-id }}
           assetNamePattern: ${{ steps.patch-release-name.outputs.platform }}
-          args: ${{ inputs.build-args }}
+          args: ${{ inputs.cuda && format('{0} --features ort-cuda', inputs.build-args) || inputs.build-args }}
 
       - name: Verify macOS dylib bundling
         if: inputs.target == 'x86_64-apple-darwin'
@@ -762,6 +785,29 @@ jobs:
               throw "Staging is missing ggml runtime DLLs"
             }
           }
+          if ("${{ inputs.cuda }}" -eq "true") {
+            $requiredStaged += @(
+              "onnxruntime_providers_shared.dll",
+              "onnxruntime_providers_cuda.dll",
+              "cublasLt64_13.dll",
+              "cublas64_13.dll",
+              "cudart64_13.dll",
+              "cufft64_12.dll",
+              "cudnn64_9.dll",
+              "nvrtc64_130_0.dll",
+              "nvJitLink_130_0.dll"
+            )
+            if (-not (Test-Path "src-tauri/transcribe-libs/THIRD_PARTY_NOTICES-CUDA.txt")) {
+              throw "CUDA staging is missing THIRD_PARTY_NOTICES-CUDA.txt"
+            }
+          } else {
+            $forbidden = $stagedDlls | Where-Object {
+              $_.Name -match '^(onnxruntime_providers_cuda|cublas|cudart|cufft|cudnn|nvrtc|nvJitLink)'
+            }
+            if ($forbidden) {
+              throw "CPU staging contains CUDA DLLs: $($forbidden.Name -join ', ')"
+            }
+          }
           foreach ($name in $requiredStaged) {
             if (-not ($stagedDlls | Where-Object { $_.Name -ieq $name })) {
               throw "Staging is missing $name"
@@ -780,6 +826,12 @@ jobs:
               if (-not (Get-ChildItem $Root -Filter $dll.Name -Recurse -ErrorAction SilentlyContinue)) {
                 throw "$Label package is missing staged runtime DLL $($dll.Name)"
               }
+            }
+
+            $edition = if ("${{ inputs.cuda }}" -eq "true") { "Cuda" } else { "Cpu" }
+            & "scripts/build-windows-cuda.ps1" -Mode Audit -PackageRoot $Root -Edition $edition -Json | Out-Host
+            if ($LASTEXITCODE -ne 0) {
+              throw "$Label recursive package audit failed"
             }
 
             & $handy.FullName --list-devices | Out-Host
@@ -831,7 +883,7 @@ jobs:
         if: inputs.upload-artifacts && contains(inputs.platform, 'windows')
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ inputs.asset-prefix }}-${{ inputs.target }}
+          name: ${{ inputs.asset-prefix }}-${{ inputs.target }}${{ inputs.cuda && '-cuda13' || '' }}
           path: |
             src-tauri/target/${{ inputs.target != '' && inputs.target != 'x86_64-pc-windows-msvc' && format('{0}/{1}', inputs.target, steps.build-profile.outputs.profile) || steps.build-profile.outputs.profile }}/bundle/msi/*.msi
             src-tauri/target/${{ inputs.target != '' && inputs.target != 'x86_64-pc-windows-msvc' && format('{0}/{1}', inputs.target, steps.build-profile.outputs.profile) || steps.build-profile.outputs.profile }}/bundle/nsis/*.exe

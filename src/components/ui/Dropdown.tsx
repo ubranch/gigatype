@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 export interface DropdownOption {
@@ -9,6 +9,7 @@ export interface DropdownOption {
 
 interface DropdownProps {
   options: DropdownOption[];
+  ariaLabel?: string;
   className?: string;
   selectedValue: string | null;
   onSelect: (value: string) => void;
@@ -19,6 +20,7 @@ interface DropdownProps {
 
 export const Dropdown: React.FC<DropdownProps> = ({
   options,
+  ariaLabel,
   selectedValue,
   onSelect,
   className = "",
@@ -29,6 +31,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
   const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -58,10 +62,23 @@ export const Dropdown: React.FC<DropdownProps> = ({
     setIsOpen(!isOpen);
   };
 
+  const handleMenuKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setIsOpen(false);
+      triggerRef.current?.focus();
+    }
+  };
+
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
       <button
+        ref={triggerRef}
         type="button"
+        aria-label={ariaLabel}
+        aria-controls={menuId}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
         className={`px-2 py-[5px] text-sm font-semibold bg-mid-gray/10 border border-mid-gray/80 rounded-md min-w-[200px] w-full text-start grid grid-cols-[1fr_auto] gap-2 items-center transition-all duration-150 ${
           disabled
             ? "opacity-50 cursor-not-allowed"
@@ -72,6 +89,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
       >
         <span className="truncate">{selectedOption?.label || placeholder}</span>
         <svg
+          aria-hidden="true"
           className={`w-4 h-4 transition-transform duration-200 ${isOpen ? "transform rotate-180" : ""}`}
           fill="none"
           stroke="currentColor"
@@ -86,7 +104,13 @@ export const Dropdown: React.FC<DropdownProps> = ({
         </svg>
       </button>
       {isOpen && !disabled && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-background border border-mid-gray/80 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto">
+        <div
+          id={menuId}
+          role="listbox"
+          aria-label={ariaLabel}
+          onKeyDown={handleMenuKeyDown}
+          className="absolute top-full left-0 right-0 mt-1 bg-background border border-mid-gray/80 rounded-md shadow-lg z-50 max-h-60 overflow-y-auto"
+        >
           {options.length === 0 ? (
             <div className="px-2 py-1 text-sm text-mid-gray">
               {t("common.noOptionsFound")}
@@ -96,6 +120,8 @@ export const Dropdown: React.FC<DropdownProps> = ({
               <button
                 key={option.value}
                 type="button"
+                role="option"
+                aria-selected={selectedValue === option.value}
                 className={`w-full px-2 py-1 text-sm text-start hover:bg-logo-primary/10 transition-colors duration-150 ${
                   selectedValue === option.value
                     ? "bg-logo-primary/20 font-semibold"

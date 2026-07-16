@@ -11,6 +11,7 @@ import {
   supportsLanguageCode,
 } from "@/lib/constants/languages.ts";
 import type { ModelInfo } from "@/bindings";
+import { isLegacyModelSource } from "@/lib/utils/modelSource";
 
 // check if model supports a language based on its supported_languages list
 const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
@@ -21,7 +22,7 @@ const modelSupportsLanguage = (model: ModelInfo, langCode: string): boolean => {
 // the catalog GGUFs. They stay runnable when already on disk, but we no longer
 // advertise the download.
 const isLegacyModel = (model: ModelInfo): boolean =>
-  typeof model.source === "object" && "Url" in model.source;
+  isLegacyModelSource(model.source);
 
 export const ModelsSettings: React.FC = () => {
   const { t } = useTranslation();

@@ -26,7 +26,7 @@ fn main() {
     // ORT_PREFER_DYNAMIC_LINK to a baseline ONNX Runtime), ship its onnxruntime.dll
     // next to Handy.exe so the app loads our baseline build instead of statically
     // embedding pyke's /arch:AVX2 one (which crashes at startup on pre-Haswell CPUs).
-    stage_onnxruntime_dll();
+    stage_onnxruntime_runtime();
 
     // Must run after transcribe staging because that helper recreates transcribe-libs/.
     stage_vc_runtime_dlls();
@@ -107,11 +107,12 @@ fn stage_vc_runtime_dlls() {
 /// target — i.e. the CI dynamic-link path. A plain static build (no env) skips this
 /// and keeps the embedded ORT, and non-Windows targets bundle their ORT elsewhere
 /// (see build.yml frameworks/deb.files steps), so they are ignored here.
-fn stage_onnxruntime_dll() {
+fn stage_onnxruntime_runtime() {
     use std::path::PathBuf;
 
     println!("cargo:rerun-if-env-changed=ORT_LIB_LOCATION");
     println!("cargo:rerun-if-env-changed=ORT_PREFER_DYNAMIC_LINK");
+    println!("cargo:rerun-if-env-changed=HANDY_CUDA_RUNTIME_DIR");
 
     if std::env::var_os("ORT_PREFER_DYNAMIC_LINK").is_none() {
         return;
@@ -123,24 +124,142 @@ fn stage_onnxruntime_dll() {
         return;
     };
 
-    let src = PathBuf::from(&lib_location).join("onnxruntime.dll");
-    if !src.exists() {
-        panic!(
-            "ORT_PREFER_DYNAMIC_LINK is set but {} does not exist; a dynamic ORT \
-             build must supply onnxruntime.dll to bundle",
-            src.display()
-        );
-    }
-
     // transcribe-libs/ is already created by stage_transcribe_runtime_libs() on the
     // Windows x86_64 dynamic-backends build and bundled by tauri.windows.conf.json;
     // create it defensively so this is self-contained.
     let dest_dir =
         PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("transcribe-libs");
     std::fs::create_dir_all(&dest_dir).expect("create transcribe-libs staging dir");
-    std::fs::copy(&src, dest_dir.join("onnxruntime.dll"))
-        .unwrap_or_else(|e| panic!("copy {}: {e}", src.display()));
-    println!("cargo:warning=Staged onnxruntime.dll for Windows bundling");
+
+    let lib_location = PathBuf::from(lib_location);
+    copy_required_runtime_file(&lib_location, &dest_dir, "onnxruntime.dll");
+
+    let cuda_build = std::env::var_os("CARGO_FEATURE_ORT_CUDA").is_some()
+        && std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64");
+    if !cuda_build {
+        remove_stale_cuda_runtime(&dest_dir);
+        println!("cargo:warning=Staged CPU-only ONNX Runtime for Windows bundling");
+        return;
+    }
+
+    for provider in [
+        "onnxruntime_providers_shared.dll",
+        "onnxruntime_providers_cuda.dll",
+    ] {
+        copy_required_runtime_file(&lib_location, &dest_dir, provider);
+    }
+
+    let runtime_dir = std::env::var_os("HANDY_CUDA_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            panic!("ort-cuda Windows build requires HANDY_CUDA_RUNTIME_DIR from scripts/build-windows-cuda.ps1")
+        });
+    if !runtime_dir.is_dir() {
+        panic!(
+            "HANDY_CUDA_RUNTIME_DIR is not a directory: {}",
+            runtime_dir.display()
+        );
+    }
+    for entry in std::fs::read_dir(&runtime_dir)
+        .unwrap_or_else(|error| panic!("read {}: {error}", runtime_dir.display()))
+        .flatten()
+    {
+        let source = entry.path();
+        if source.extension().and_then(|value| value.to_str()) == Some("dll") {
+            let name = source.file_name().expect("CUDA runtime DLL has a name");
+            std::fs::copy(&source, dest_dir.join(name))
+                .unwrap_or_else(|error| panic!("copy {}: {error}", source.display()));
+        }
+    }
+
+    let notice_source = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
+        .join("resources/licenses/THIRD_PARTY_NOTICES-CUDA.txt");
+    if !notice_source.is_file() {
+        panic!("CUDA notice source is missing: {}", notice_source.display());
+    }
+    std::fs::copy(
+        &notice_source,
+        dest_dir.join("THIRD_PARTY_NOTICES-CUDA.txt"),
+    )
+    .unwrap_or_else(|error| panic!("copy {}: {error}", notice_source.display()));
+
+    let source_licenses = runtime_dir.join("licenses");
+    if !source_licenses.is_dir() {
+        panic!(
+            "prepared CUDA runtime license directory is missing: {}",
+            source_licenses.display()
+        );
+    }
+    let destination_licenses = dest_dir.join("licenses");
+    std::fs::create_dir_all(&destination_licenses).expect("create CUDA license staging dir");
+    for entry in std::fs::read_dir(&source_licenses)
+        .unwrap_or_else(|error| panic!("read {}: {error}", source_licenses.display()))
+        .flatten()
+    {
+        let source = entry.path();
+        if source.is_file() {
+            let name = source.file_name().expect("CUDA license file has a name");
+            std::fs::copy(&source, destination_licenses.join(name))
+                .unwrap_or_else(|error| panic!("copy {}: {error}", source.display()));
+        }
+    }
+
+    for required in [
+        "onnxruntime_providers_cuda.dll",
+        "onnxruntime_providers_shared.dll",
+        "cublasLt64_13.dll",
+        "cublas64_13.dll",
+        "cudart64_13.dll",
+        "cufft64_12.dll",
+        "cudnn64_9.dll",
+        "nvrtc64_130_0.dll",
+        "nvJitLink_130_0.dll",
+        "THIRD_PARTY_NOTICES-CUDA.txt",
+    ] {
+        if !dest_dir.join(required).is_file() {
+            panic!("CUDA staging is missing required file {required}");
+        }
+    }
+    println!("cargo:warning=Staged app-local ONNX Runtime CUDA 13 closure");
+}
+
+fn copy_required_runtime_file(
+    source_dir: &std::path::Path,
+    dest_dir: &std::path::Path,
+    name: &str,
+) {
+    let source = source_dir.join(name);
+    if !source.is_file() {
+        panic!("dynamic ONNX Runtime build requires {}", source.display());
+    }
+    std::fs::copy(&source, dest_dir.join(name))
+        .unwrap_or_else(|error| panic!("copy {}: {error}", source.display()));
+}
+
+fn remove_stale_cuda_runtime(dest_dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dest_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let lower = entry.file_name().to_string_lossy().to_lowercase();
+        let cuda_file = lower == "onnxruntime_providers_cuda.dll"
+            || lower == "onnxruntime_providers_shared.dll"
+            || lower == "third_party_notices-cuda.txt"
+            || lower.starts_with("cublas")
+            || lower.starts_with("cudart")
+            || lower.starts_with("cufft")
+            || lower.starts_with("cudnn")
+            || lower.starts_with("nvrtc")
+            || lower.starts_with("nvjitlink");
+        if cuda_file {
+            std::fs::remove_file(&path)
+                .unwrap_or_else(|error| panic!("remove stale {}: {error}", path.display()));
+        } else if lower == "licenses" && path.is_dir() {
+            std::fs::remove_dir_all(&path)
+                .unwrap_or_else(|error| panic!("remove stale {}: {error}", path.display()));
+        }
+    }
 }
 
 /// Stage transcribe-cpp's shared runtime libraries into `transcribe-libs/` so the

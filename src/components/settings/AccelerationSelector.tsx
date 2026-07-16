@@ -86,15 +86,15 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
       opts.push({ value: "cpu", label: "CPU" });
       setTranscribeOptions(opts);
 
-      // ORT options (unchanged)
-      const ortVals = available.ort.includes("auto")
-        ? available.ort
-        : ["auto", ...available.ort];
       setOrtOptions(
-        ortVals.map((v) => ({
-          value: v,
-          label: ORT_LABELS[v as OrtAcceleratorSetting] ?? v,
-        })),
+        available.ort
+          .filter((diagnostic) => diagnostic.usable)
+          .map((diagnostic) => ({
+            value: diagnostic.id,
+            label:
+              ORT_LABELS[diagnostic.id as OrtAcceleratorSetting] ??
+              diagnostic.id,
+          })),
       );
     });
   }, [t]);
@@ -106,6 +106,9 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
     currentGpuDevice as number,
   );
   const currentOrt = getSetting("ort_accelerator") ?? "auto";
+  const selectableOrt = ortOptions.some((option) => option.value === currentOrt)
+    ? currentOrt
+    : "auto";
 
   const handleTranscribeChange = async (value: string) => {
     const { accelerator, gpuDevice } = decodeTranscribeValue(value);
@@ -123,6 +126,7 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
         layout="horizontal"
       >
         <Dropdown
+          ariaLabel={t("settings.advanced.acceleration.transcribe.title")}
           options={transcribeOptions}
           selectedValue={currentTranscribe}
           onSelect={handleTranscribeChange}
@@ -132,7 +136,7 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
           }
         />
       </SettingContainer>
-      {ortOptions.length > 2 && (
+      {ortOptions.length > 0 && (
         <SettingContainer
           title={t("settings.advanced.acceleration.ort.title")}
           description={t("settings.advanced.acceleration.ort.description")}
@@ -141,8 +145,9 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
           layout="horizontal"
         >
           <Dropdown
+            ariaLabel={t("settings.advanced.acceleration.ort.title")}
             options={ortOptions}
-            selectedValue={currentOrt}
+            selectedValue={selectableOrt}
             onSelect={(value) =>
               updateSetting("ort_accelerator", value as OrtAcceleratorSetting)
             }

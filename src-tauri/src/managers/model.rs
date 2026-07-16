@@ -1,3 +1,8 @@
+use super::model_bundle::{
+    bundle_is_complete, bundle_paths, cleanup_incomplete_bundle, completed_bundle_path,
+    delete_bundle, hugging_face_cache_repo_root, prepare_bundle_from_cache, resolve_cached_files,
+    validate_bundle, BundlePrepareOutcome, BundleProgressTracker,
+};
 use super::model_capabilities::{
     CapabilityProbe, CapabilityProber, Compatibility, GgufHeaderProber,
 };
@@ -39,6 +44,14 @@ pub enum EngineType {
 
 /// Where a model comes from and how Handy obtains it — the routing discriminant
 /// for downloading and on-disk resolution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Type)]
+pub struct HuggingFaceBundleFile {
+    pub remote_filename: String,
+    pub local_filename: String,
+    pub size_bytes: u64,
+    pub sha256: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Type)]
 pub enum ModelSource {
     /// Direct HTTP download from a URL (current blob.handy.computer hosting).
@@ -51,6 +64,13 @@ pub enum ModelSource {
     /// HF cache (so other tools reuse it). The file within the repo is
     /// [`ModelInfo::filename`].
     HuggingFace { repo_id: String, revision: String },
+    /// A commit-pinned set of files fetched through the shared Hugging Face
+    /// cache and materialized as one Handy-owned model directory.
+    HuggingFaceBundle {
+        repo_id: String,
+        revision: String,
+        files: Vec<HuggingFaceBundleFile>,
+    },
     /// Already present on disk — a user-provided custom model, or one discovered
     /// in a shared cache. Nothing to download.
     Local,
@@ -426,12 +446,16 @@ struct DownloadCleanup<'a> {
     cancel_flags: &'a Arc<Mutex<HashMap<String, CancellationToken>>>,
     model_id: String,
     disarmed: bool,
+    bundle_cleanup: Option<(PathBuf, String)>,
 }
 
 impl<'a> Drop for DownloadCleanup<'a> {
     fn drop(&mut self) {
         if self.disarmed {
             return;
+        }
+        if let Some((models_dir, directory_name)) = &self.bundle_cleanup {
+            let _ = cleanup_incomplete_bundle(models_dir, directory_name);
         }
         {
             let mut models = self.available_models.lock().unwrap();
@@ -441,6 +465,154 @@ impl<'a> Drop for DownloadCleanup<'a> {
         }
         self.cancel_flags.lock().unwrap().remove(&self.model_id);
     }
+}
+
+fn bundle_download_error(remote_filename: &str, error: &dyn std::fmt::Display) -> anyhow::Error {
+    anyhow::anyhow!(
+        "Hugging Face bundle download failed for {}: {}",
+        remote_filename,
+        error
+    )
+}
+
+fn register_gigaam_multilingual(available_models: &mut HashMap<String, ModelInfo>) {
+    const SMALL_REPO: &str = "istupakov/gigaam-multilingual-ctc-onnx";
+    const SMALL_REVISION: &str = "458860e1983aef670dd9795fb6af603c82767d5d";
+    const LARGE_REPO: &str = "istupakov/gigaam-multilingual-large-ctc-onnx";
+    const LARGE_REVISION: &str = "07665ab5e54371dd1ac7b8b10f06478003723573";
+
+    let vocab_file = || HuggingFaceBundleFile {
+        remote_filename: "multilingual_vocab.txt".to_string(),
+        local_filename: "vocab.txt".to_string(),
+        size_bytes: 393,
+        sha256: "4d130287892e1099fedfb3f93c4b4cf8a263151158801680b28977d1be4133f4".to_string(),
+    };
+    let mut register = |id: &str,
+                        name: &str,
+                        description: &str,
+                        repo_id: &str,
+                        revision: &str,
+                        files: Vec<HuggingFaceBundleFile>,
+                        accuracy_score: f32,
+                        speed_score: f32| {
+        let size_bytes = files.iter().map(|file| file.size_bytes).sum::<u64>();
+        available_models.insert(
+            id.to_string(),
+            ModelInfo {
+                id: id.to_string(),
+                name: name.to_string(),
+                description: description.to_string(),
+                filename: id.to_string(),
+                source: ModelSource::HuggingFaceBundle {
+                    repo_id: repo_id.to_string(),
+                    revision: revision.to_string(),
+                    files,
+                },
+                size_mb: size_bytes / (1024 * 1024),
+                is_downloaded: false,
+                is_downloading: false,
+                partial_size: 0,
+                is_directory: true,
+                engine_type: EngineType::GigaAM,
+                accuracy_score,
+                speed_score,
+                supports_translation: false,
+                is_recommended: false,
+                supported_languages: ["ru", "en", "kk", "ky", "uz"]
+                    .into_iter()
+                    .map(String::from)
+                    .collect(),
+                supports_language_selection: false,
+                is_custom: false,
+                supports_streaming: false,
+                supports_language_detection: true,
+            },
+        );
+    };
+
+    register(
+        "gigaam-multilingual-220m-int8",
+        "GigaAM Multilingual 220M INT8",
+        "220M parameters, INT8 for CPU. Russian, English, Kazakh, Kyrgyz, and Uzbek; no punctuation or digits.",
+        SMALL_REPO,
+        SMALL_REVISION,
+        vec![
+            HuggingFaceBundleFile {
+                remote_filename: "multilingual_ctc.int8.onnx".to_string(),
+                local_filename: "model.int8.onnx".to_string(),
+                size_bytes: 224_762_204,
+                sha256: "e08e27ae5669b39f0c378fae101bbbb9a80505f74f9b66719c309bf5b894a480"
+                    .to_string(),
+            },
+            vocab_file(),
+        ],
+        0.8,
+        0.7,
+    );
+    register(
+        "gigaam-multilingual-220m-fp32-cuda",
+        "GigaAM Multilingual 220M FP32 CUDA",
+        "220M parameters, FP32 for CUDA. Russian, English, Kazakh, Kyrgyz, and Uzbek; no punctuation or digits.",
+        SMALL_REPO,
+        SMALL_REVISION,
+        vec![
+            HuggingFaceBundleFile {
+                remote_filename: "multilingual_ctc.onnx".to_string(),
+                local_filename: "model.onnx".to_string(),
+                size_bytes: 885_388_622,
+                sha256: "8bc803289f9cb5147ee95451fd9bdba219b1ecf1ddcd59a3651177c103c9eeec"
+                    .to_string(),
+            },
+            vocab_file(),
+        ],
+        0.8,
+        0.8,
+    );
+    register(
+        "gigaam-multilingual-600m-int8",
+        "GigaAM Multilingual 600M INT8",
+        "600M parameters, INT8 for CPU. Russian, English, Kazakh, Kyrgyz, and Uzbek; no punctuation or digits.",
+        LARGE_REPO,
+        LARGE_REVISION,
+        vec![
+            HuggingFaceBundleFile {
+                remote_filename: "multilingual_large_ctc.int8.onnx".to_string(),
+                local_filename: "model.int8.onnx".to_string(),
+                size_bytes: 591_644_782,
+                sha256: "b2ad9c38fc04197ba758105d33f7404fd13d977958722e0f49e3f3e22521f1c6"
+                    .to_string(),
+            },
+            vocab_file(),
+        ],
+        0.9,
+        0.55,
+    );
+    register(
+        "gigaam-multilingual-600m-fp32-cuda",
+        "GigaAM Multilingual 600M FP32 CUDA",
+        "600M parameters, FP32 for CUDA. Russian, English, Kazakh, Kyrgyz, and Uzbek; no punctuation or digits.",
+        LARGE_REPO,
+        LARGE_REVISION,
+        vec![
+            HuggingFaceBundleFile {
+                remote_filename: "multilingual_large_ctc.onnx".to_string(),
+                local_filename: "model.onnx".to_string(),
+                size_bytes: 909_828,
+                sha256: "4a2d22279e90648262e1259e82982f1f1f7e2c4957e187c2b68459458c92fd5f"
+                    .to_string(),
+            },
+            HuggingFaceBundleFile {
+                remote_filename: "multilingual_large_ctc.onnx.data".to_string(),
+                local_filename: "multilingual_large_ctc.onnx.data".to_string(),
+                size_bytes: 2_343_837_696,
+                sha256: "5a7bf60fd3883a707dda19862b58a9a30777bde3e439ff76b49580da1f18b1f1"
+                    .to_string(),
+            },
+            vocab_file(),
+        ],
+        0.9,
+        0.75,
+    );
 }
 
 pub struct ModelManager {
@@ -924,6 +1096,8 @@ impl ModelManager {
             },
         );
 
+        register_gigaam_multilingual(&mut available_models);
+
         // Canary 180m Flash supported languages (4 languages)
         let canary_flash_languages: Vec<String> = vec!["en", "de", "es", "fr"]
             .into_iter()
@@ -1312,13 +1486,37 @@ impl ModelManager {
                 model.partial_size = 0;
                 continue;
             }
+            if let ModelSource::HuggingFaceBundle {
+                repo_id,
+                revision,
+                files,
+            } = &model.source
+            {
+                if let Err(error) = validate_bundle(repo_id, revision, files) {
+                    warn!("Invalid Hugging Face bundle {}: {}", model.id, error);
+                    model.is_downloaded = false;
+                    model.is_downloading = false;
+                    model.partial_size = 0;
+                    continue;
+                }
+
+                let paths = bundle_paths(&self.models_dir, &model.filename);
+                let has_active_download = self.cancel_flags.lock().unwrap().contains_key(&model.id);
+                if !has_active_download {
+                    cleanup_incomplete_bundle(&self.models_dir, &model.filename)?;
+                }
+                model.is_downloaded = bundle_is_complete(&paths.final_dir, files);
+                model.is_downloading = model.is_downloading && has_active_download;
+                model.partial_size = 0;
+                continue;
+            }
             if model.is_directory {
                 // For directory-based models, check if the directory exists
                 let model_path = self.models_dir.join(&model.filename);
-                let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
+                let partial_path = self.models_dir.join(format!("{}.partial", model.filename));
                 let extracting_path = self
                     .models_dir
-                    .join(format!("{}.extracting", &model.filename));
+                    .join(format!("{}.extracting", model.filename));
 
                 // Clean up any leftover .extracting directories from interrupted extractions
                 // But only if this model is NOT currently being extracted
@@ -1343,7 +1541,7 @@ impl ModelManager {
             } else {
                 // For file-based models (existing logic)
                 let model_path = self.models_dir.join(&model.filename);
-                let partial_path = self.models_dir.join(format!("{}.partial", &model.filename));
+                let partial_path = self.models_dir.join(format!("{}.partial", model.filename));
 
                 model.is_downloaded = model_path.exists();
                 model.is_downloading = false;
@@ -1777,6 +1975,7 @@ impl ModelManager {
             cancel_flags: &self.cancel_flags,
             model_id: model_id.clone(),
             disarmed: false,
+            bundle_cleanup: None,
         };
 
         info!(
@@ -1823,6 +2022,197 @@ impl ModelManager {
         Ok(())
     }
 
+    async fn download_hf_bundle(
+        &self,
+        model_info: &ModelInfo,
+        repo_id: String,
+        revision: String,
+        files: Vec<HuggingFaceBundleFile>,
+    ) -> Result<()> {
+        validate_bundle(&repo_id, &revision, &files)?;
+        let model_id = model_info.id.clone();
+        let directory_name = model_info.filename.clone();
+        let paths = bundle_paths(&self.models_dir, &directory_name);
+
+        if bundle_is_complete(&paths.final_dir, &files) {
+            self.update_download_status()?;
+            let _ = self.app_handle.emit("model-download-complete", &model_id);
+            return Ok(());
+        }
+
+        {
+            let mut models = self.available_models.lock().unwrap();
+            if let Some(model) = models.get_mut(&model_id) {
+                model.is_downloading = true;
+                model.is_downloaded = false;
+            }
+        }
+
+        let cancel_token = CancellationToken::new();
+        self.cancel_flags
+            .lock()
+            .unwrap()
+            .insert(model_id.clone(), cancel_token.clone());
+        let mut cleanup = DownloadCleanup {
+            available_models: &self.available_models,
+            cancel_flags: &self.cancel_flags,
+            model_id: model_id.clone(),
+            disarmed: false,
+            bundle_cleanup: Some((self.models_dir.clone(), directory_name.clone())),
+        };
+
+        let total = files.iter().try_fold(0u64, |total, file| {
+            total
+                .checked_add(file.size_bytes)
+                .ok_or_else(|| anyhow::anyhow!("Bundle byte total overflow for model {}", model_id))
+        })?;
+        let progress_app = self.app_handle.clone();
+        let progress_model_id = model_id.clone();
+        let last_emit = Arc::new(Mutex::new(Instant::now() - Duration::from_millis(100)));
+        let progress_last_emit = Arc::clone(&last_emit);
+        let progress = BundleProgressTracker::new(
+            total,
+            Arc::new(move |snapshot| {
+                let mut last_emit = progress_last_emit.lock().unwrap();
+                if snapshot.downloaded == 0
+                    || snapshot.percentage == 100.0
+                    || last_emit.elapsed() >= Duration::from_millis(100)
+                {
+                    let _ = progress_app.emit(
+                        "model-download-progress",
+                        &DownloadProgress {
+                            model_id: progress_model_id.clone(),
+                            downloaded: snapshot.downloaded,
+                            total: snapshot.total,
+                            percentage: snapshot.percentage,
+                        },
+                    );
+                    *last_emit = Instant::now();
+                }
+            }),
+        );
+
+        let mut cached_paths = resolve_cached_files(&files, |remote_filename| {
+            hf_cached_path(&repo_id, &revision, remote_filename)
+        });
+        let has_missing_files = cached_paths.iter().any(Option::is_none);
+        if has_missing_files {
+            let api = ApiBuilder::from_env()
+                .with_progress(false)
+                .with_max_files(8)
+                .build()
+                .map_err(|error| anyhow::anyhow!("Failed to init Hugging Face API: {}", error))?;
+            let repo = api.repo(Repo::with_revision(
+                repo_id.clone(),
+                RepoType::Model,
+                revision.clone(),
+            ));
+
+            for (index, file) in files.iter().enumerate() {
+                if let Some(path) = &cached_paths[index] {
+                    progress.complete_cached(file.size_bytes);
+                    debug!(
+                        "Reusing cached Hugging Face bundle file {} at {:?}",
+                        file.remote_filename, path
+                    );
+                    continue;
+                }
+                if cancel_token.is_cancelled() {
+                    cleanup_incomplete_bundle(&self.models_dir, &directory_name)?;
+                    return Ok(());
+                }
+
+                info!(
+                    "Downloading Hugging Face bundle file {} from {}@{}",
+                    file.remote_filename, repo_id, revision
+                );
+                let file_progress = progress.file_progress(file.size_bytes);
+                let downloaded = repo
+                    .download_with_progress_cancellable(
+                        &file.remote_filename,
+                        file_progress,
+                        cancel_token.clone(),
+                    )
+                    .await;
+                match downloaded {
+                    Ok(path) => cached_paths[index] = Some(path),
+                    Err(hf_hub::api::tokio::ApiError::Cancelled) => {
+                        cleanup_incomplete_bundle(&self.models_dir, &directory_name)?;
+                        info!("Hugging Face bundle download cancelled for: {}", model_id);
+                        return Ok(());
+                    }
+                    Err(error) => {
+                        return Err(bundle_download_error(&file.remote_filename, &error));
+                    }
+                }
+            }
+        } else {
+            for file in &files {
+                progress.complete_cached(file.size_bytes);
+            }
+        }
+
+        let cached_paths: Vec<PathBuf> = cached_paths
+            .into_iter()
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| anyhow::anyhow!("Bundle cache resolution remained incomplete"))?;
+        let _ = self
+            .app_handle
+            .emit("model-verification-started", &model_id);
+        let prepare_models_dir = self.models_dir.clone();
+        let prepare_directory_name = directory_name.clone();
+        let prepare_files = files.clone();
+        let prepare_cancel = cancel_token.clone();
+        let prepare_progress = progress.clone();
+        let outcome = tokio::task::spawn_blocking(move || {
+            prepare_bundle_from_cache(
+                &prepare_models_dir,
+                &prepare_directory_name,
+                &prepare_files,
+                &cached_paths,
+                &|| prepare_cancel.is_cancelled(),
+                &prepare_progress,
+            )
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!("Bundle preparation task panicked: {}", error))??;
+
+        if outcome == BundlePrepareOutcome::Cancelled {
+            info!(
+                "Hugging Face bundle preparation cancelled for: {}",
+                model_id
+            );
+            return Ok(());
+        }
+        let BundlePrepareOutcome::Ready {
+            materialization,
+            reused,
+        } = outcome
+        else {
+            unreachable!();
+        };
+        info!(
+            "Hugging Face bundle {} ready via {:?} (reused={})",
+            model_id, materialization, reused
+        );
+
+        cleanup.disarmed = true;
+        {
+            let mut models = self.available_models.lock().unwrap();
+            if let Some(model) = models.get_mut(&model_id) {
+                model.is_downloading = false;
+                model.is_downloaded = true;
+                model.partial_size = 0;
+            }
+        }
+        self.cancel_flags.lock().unwrap().remove(&model_id);
+        let _ = self
+            .app_handle
+            .emit("model-verification-completed", &model_id);
+        let _ = self.app_handle.emit("model-download-complete", &model_id);
+        Ok(())
+    }
+
     pub async fn download_model(&self, model_id: &str) -> Result<()> {
         let model_info = {
             let models = self.available_models.lock().unwrap();
@@ -1839,6 +2229,20 @@ impl ModelManager {
                     .download_hf_model(&model_info, repo_id.clone(), revision.clone())
                     .await;
             }
+            ModelSource::HuggingFaceBundle {
+                repo_id,
+                revision,
+                files,
+            } => {
+                return self
+                    .download_hf_bundle(
+                        &model_info,
+                        repo_id.clone(),
+                        revision.clone(),
+                        files.clone(),
+                    )
+                    .await;
+            }
             ModelSource::Local => {
                 return Err(anyhow::anyhow!("No download source for model"));
             }
@@ -1846,7 +2250,7 @@ impl ModelManager {
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
-            .join(format!("{}.partial", &model_info.filename));
+            .join(format!("{}.partial", model_info.filename));
 
         // Don't download if complete version already exists
         if model_path.exists() {
@@ -1890,6 +2294,7 @@ impl ModelManager {
             cancel_flags: &self.cancel_flags,
             model_id: model_id.to_string(),
             disarmed: false,
+            bundle_cleanup: None,
         };
 
         // Create HTTP client with range request for resuming
@@ -2069,7 +2474,7 @@ impl ModelManager {
             // Use a temporary extraction directory to ensure atomic operations
             let temp_extract_dir = self
                 .models_dir
-                .join(format!("{}.extracting", &model_info.filename));
+                .join(format!("{}.extracting", model_info.filename));
             let final_model_dir = self.models_dir.join(&model_info.filename);
 
             // Clean up any previous incomplete extraction
@@ -2190,16 +2595,34 @@ impl ModelManager {
             // delete hard-removes from the shared HF cache.
             let mut deleted = false;
             if let Some(file) = hf_cached_path(repo_id, revision, &model_info.filename) {
-                if let Some(repo_dir) = file.ancestors().nth(3) {
-                    if repo_dir
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|n| n.starts_with("models--"))
-                    {
-                        info!("Deleting HF cache repo at: {:?}", repo_dir);
-                        fs::remove_dir_all(repo_dir)?;
-                        deleted = true;
-                    }
+                if let Some(repo_dir) = hugging_face_cache_repo_root(&file) {
+                    info!("Deleting HF cache repo at: {:?}", repo_dir);
+                    fs::remove_dir_all(repo_dir)?;
+                    deleted = true;
+                }
+            }
+            if !deleted {
+                return Err(anyhow::anyhow!("No model files found to delete"));
+            }
+            self.update_download_status()?;
+            let _ = self.app_handle.emit("model-deleted", model_id);
+            return Ok(());
+        }
+
+        if let ModelSource::HuggingFaceBundle {
+            repo_id,
+            revision,
+            files,
+        } = &model_info.source
+        {
+            let mut deleted = delete_bundle(&self.models_dir, &model_info.filename)?;
+            if let Some(cached_file) = files
+                .iter()
+                .find_map(|file| hf_cached_path(repo_id, revision, &file.remote_filename))
+            {
+                if let Some(repo_dir) = hugging_face_cache_repo_root(&cached_file) {
+                    fs::remove_dir_all(repo_dir)?;
+                    deleted = true;
                 }
             }
             if !deleted {
@@ -2213,7 +2636,7 @@ impl ModelManager {
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
-            .join(format!("{}.partial", &model_info.filename));
+            .join(format!("{}.partial", model_info.filename));
         debug!("ModelManager: Model path: {:?}", model_path);
         debug!("ModelManager: Partial path: {:?}", partial_path);
 
@@ -2289,11 +2712,21 @@ impl ModelManager {
                 anyhow::anyhow!("Complete model file not found in HF cache: {}", model_id)
             });
         }
+        if let ModelSource::HuggingFaceBundle {
+            repo_id,
+            revision,
+            files,
+        } = &model_info.source
+        {
+            validate_bundle(repo_id, revision, files)?;
+            return completed_bundle_path(&self.models_dir, &model_info.filename, files)
+                .map_err(|_| anyhow::anyhow!("Complete model bundle not found: {}", model_id));
+        }
 
         let model_path = self.models_dir.join(&model_info.filename);
         let partial_path = self
             .models_dir
-            .join(format!("{}.partial", &model_info.filename));
+            .join(format!("{}.partial", model_info.filename));
 
         if model_info.is_directory {
             // For directory-based models, ensure the directory exists and is complete
@@ -2700,5 +3133,190 @@ mod tests {
             !models.contains_key("someone/llama-7b/llama-q8.gguf"),
             "non-ASR gguf must be ignored"
         );
+    }
+
+    #[test]
+    fn gigaam_multilingual_catalog() {
+        let mut models = HashMap::new();
+        register_gigaam_multilingual(&mut models);
+
+        let vocab = HuggingFaceBundleFile {
+            remote_filename: "multilingual_vocab.txt".to_string(),
+            local_filename: "vocab.txt".to_string(),
+            size_bytes: 393,
+            sha256: "4d130287892e1099fedfb3f93c4b4cf8a263151158801680b28977d1be4133f4".to_string(),
+        };
+        let expected = [
+            (
+                "gigaam-multilingual-220m-int8",
+                "GigaAM Multilingual 220M INT8",
+                "220M parameters, INT8 for CPU. Russian, English, Kazakh, Kyrgyz, and Uzbek; no punctuation or digits.",
+                "istupakov/gigaam-multilingual-ctc-onnx",
+                "458860e1983aef670dd9795fb6af603c82767d5d",
+                vec![
+                    HuggingFaceBundleFile {
+                        remote_filename: "multilingual_ctc.int8.onnx".to_string(),
+                        local_filename: "model.int8.onnx".to_string(),
+                        size_bytes: 224_762_204,
+                        sha256: "e08e27ae5669b39f0c378fae101bbbb9a80505f74f9b66719c309bf5b894a480".to_string(),
+                    },
+                    vocab.clone(),
+                ],
+            ),
+            (
+                "gigaam-multilingual-220m-fp32-cuda",
+                "GigaAM Multilingual 220M FP32 CUDA",
+                "220M parameters, FP32 for CUDA. Russian, English, Kazakh, Kyrgyz, and Uzbek; no punctuation or digits.",
+                "istupakov/gigaam-multilingual-ctc-onnx",
+                "458860e1983aef670dd9795fb6af603c82767d5d",
+                vec![
+                    HuggingFaceBundleFile {
+                        remote_filename: "multilingual_ctc.onnx".to_string(),
+                        local_filename: "model.onnx".to_string(),
+                        size_bytes: 885_388_622,
+                        sha256: "8bc803289f9cb5147ee95451fd9bdba219b1ecf1ddcd59a3651177c103c9eeec".to_string(),
+                    },
+                    vocab.clone(),
+                ],
+            ),
+            (
+                "gigaam-multilingual-600m-int8",
+                "GigaAM Multilingual 600M INT8",
+                "600M parameters, INT8 for CPU. Russian, English, Kazakh, Kyrgyz, and Uzbek; no punctuation or digits.",
+                "istupakov/gigaam-multilingual-large-ctc-onnx",
+                "07665ab5e54371dd1ac7b8b10f06478003723573",
+                vec![
+                    HuggingFaceBundleFile {
+                        remote_filename: "multilingual_large_ctc.int8.onnx".to_string(),
+                        local_filename: "model.int8.onnx".to_string(),
+                        size_bytes: 591_644_782,
+                        sha256: "b2ad9c38fc04197ba758105d33f7404fd13d977958722e0f49e3f3e22521f1c6".to_string(),
+                    },
+                    vocab.clone(),
+                ],
+            ),
+            (
+                "gigaam-multilingual-600m-fp32-cuda",
+                "GigaAM Multilingual 600M FP32 CUDA",
+                "600M parameters, FP32 for CUDA. Russian, English, Kazakh, Kyrgyz, and Uzbek; no punctuation or digits.",
+                "istupakov/gigaam-multilingual-large-ctc-onnx",
+                "07665ab5e54371dd1ac7b8b10f06478003723573",
+                vec![
+                    HuggingFaceBundleFile {
+                        remote_filename: "multilingual_large_ctc.onnx".to_string(),
+                        local_filename: "model.onnx".to_string(),
+                        size_bytes: 909_828,
+                        sha256: "4a2d22279e90648262e1259e82982f1f1f7e2c4957e187c2b68459458c92fd5f".to_string(),
+                    },
+                    HuggingFaceBundleFile {
+                        remote_filename: "multilingual_large_ctc.onnx.data".to_string(),
+                        local_filename: "multilingual_large_ctc.onnx.data".to_string(),
+                        size_bytes: 2_343_837_696,
+                        sha256: "5a7bf60fd3883a707dda19862b58a9a30777bde3e439ff76b49580da1f18b1f1".to_string(),
+                    },
+                    vocab,
+                ],
+            ),
+        ];
+
+        assert_eq!(models.len(), expected.len());
+        for (id, name, description, expected_repo, expected_revision, expected_files) in expected {
+            let model = models
+                .get(id)
+                .expect("multilingual GigaAM choice must be registered");
+            assert_eq!(model.name, name);
+            assert_eq!(model.description, description);
+            assert_eq!(model.filename, id);
+            assert_eq!(
+                model.size_mb,
+                expected_files
+                    .iter()
+                    .map(|file| file.size_bytes)
+                    .sum::<u64>()
+                    / (1024 * 1024)
+            );
+            assert!(model.is_directory);
+            assert!(matches!(model.engine_type, EngineType::GigaAM));
+            assert_eq!(model.supported_languages, ["ru", "en", "kk", "ky", "uz"]);
+            assert!(!model.supports_language_selection);
+            assert!(model.supports_language_detection);
+            assert!(!model.supports_translation);
+            assert!(!model.supports_streaming);
+            assert!(!model.is_custom);
+
+            let ModelSource::HuggingFaceBundle {
+                repo_id,
+                revision,
+                files,
+            } = &model.source
+            else {
+                panic!("multilingual GigaAM must use a non-legacy bundle source");
+            };
+            assert_eq!(repo_id, expected_repo);
+            assert_eq!(revision, expected_revision);
+            assert_eq!(files, &expected_files);
+        }
+
+        let mut catalog: Vec<_> = models.values().collect();
+        catalog.sort_by(|left, right| left.id.cmp(&right.id));
+        println!("{}", serde_json::to_string_pretty(&catalog).unwrap());
+
+        let binding = specta_typescript::export::<ModelSource>(
+            &specta_typescript::Typescript::default()
+                .bigint(specta_typescript::BigIntExportBehavior::Number),
+        )
+        .unwrap();
+        assert!(binding.contains("HuggingFaceBundle"));
+        assert!(binding.contains("files: HuggingFaceBundleFile[]"));
+        println!("{binding}");
+    }
+
+    #[test]
+    fn bundle_network_error_cleans_download_state_and_staging() {
+        let temp = TempDir::new().unwrap();
+        let models_dir = temp.path().join("models");
+        fs::create_dir_all(&models_dir).unwrap();
+        let paths = bundle_paths(&models_dir, "gigaam-multilingual-220m-int8");
+        fs::create_dir_all(&paths.staging_dir).unwrap();
+        fs::write(paths.staging_dir.join("partial"), b"partial").unwrap();
+
+        let mut models = HashMap::new();
+        register_gigaam_multilingual(&mut models);
+        let model = models.get_mut("gigaam-multilingual-220m-int8").unwrap();
+        model.is_downloading = true;
+        model.is_downloaded = false;
+        let models = Mutex::new(models);
+        let cancel_flags = Arc::new(Mutex::new(HashMap::new()));
+        cancel_flags.lock().unwrap().insert(
+            "gigaam-multilingual-220m-int8".to_string(),
+            CancellationToken::new(),
+        );
+
+        let error = {
+            let _cleanup = DownloadCleanup {
+                available_models: &models,
+                cancel_flags: &cancel_flags,
+                model_id: "gigaam-multilingual-220m-int8".to_string(),
+                disarmed: false,
+                bundle_cleanup: Some((
+                    models_dir.clone(),
+                    "gigaam-multilingual-220m-int8".to_string(),
+                )),
+            };
+            bundle_download_error(
+                "multilingual_ctc.int8.onnx",
+                &std::io::Error::other("network unavailable"),
+            )
+        };
+
+        let models = models.lock().unwrap();
+        let model = models.get("gigaam-multilingual-220m-int8").unwrap();
+        assert!(!model.is_downloaded);
+        assert!(!model.is_downloading);
+        assert!(!paths.final_dir.exists());
+        assert!(!paths.staging_dir.exists());
+        assert!(cancel_flags.lock().unwrap().is_empty());
+        assert!(error.to_string().contains("multilingual_ctc.int8.onnx"));
+        assert!(error.to_string().contains("network unavailable"));
     }
 }

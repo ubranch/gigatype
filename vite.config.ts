@@ -19,6 +19,9 @@ export default defineConfig(async () => ({
 
   // Multiple entry points for main app and overlay
   build: {
+    // Keep generated web assets isolated from native installers copied under
+    // dist/windows*; Vite can safely empty this directory on every build.
+    outDir: "dist/app",
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),

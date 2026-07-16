@@ -262,7 +262,7 @@
         },
         "ort": {
           "title": "ONNX Acceleration",
-          "description": "Hardware acceleration for ONNX models (Parakeet, Canary, Moonshine, etc.). DirectML on Windows is experimental. Models may fail to transcribe."
+          "description": "Hardware acceleration for ONNX models, including GigaAM. Auto uses CUDA only when this build contains a usable CUDA runtime; explicit CUDA fails instead of silently falling back."
         },
         "gpuDevice": {
           "auto": "Auto"

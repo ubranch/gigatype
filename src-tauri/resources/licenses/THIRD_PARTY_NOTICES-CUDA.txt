@@ -1,0 +1,27 @@
+Handy CUDA 13 edition — third-party runtime notices
+
+This edition is for Windows x64 systems with a supported NVIDIA driver. It
+redistributes runtime libraries only; CUDA developer tools and model weights are
+not included.
+
+Microsoft ONNX Runtime 1.24.2
+Source: https://github.com/microsoft/onnxruntime/releases/tag/v1.24.2
+Asset: onnxruntime-win-x64-gpu_cuda13-1.24.2.zip
+License: MIT. The archive's LICENSE and ThirdPartyNotices.txt files are included
+in the packaged licenses directory.
+
+NVIDIA CUDA Toolkit 13.0 Update 2 redistributable components
+Manifest: https://developer.download.nvidia.com/compute/cuda/redist/redistrib_13.0.2.json
+Components: CUDA Runtime, CUDA NVRTC, cuBLAS, cuFFT, and nvJitLink.
+License: NVIDIA CUDA Toolkit End User License Agreement. Each official
+redistributable archive's LICENSE.txt is included in the packaged licenses
+directory.
+
+NVIDIA cuDNN 9.16.0.29 for CUDA 13
+Manifest: https://developer.download.nvidia.com/compute/cudnn/redist/redistrib_9.16.0.json
+Asset: cudnn-windows-x86_64-9.16.0.29_cuda13-archive.zip
+License: NVIDIA cuDNN Software License Agreement. The official archive's
+LICENSE.txt is included in the packaged licenses directory.
+
+NVIDIA driver libraries such as nvcuda.dll are supplied by the installed NVIDIA
+display driver and are not redistributed by Handy.

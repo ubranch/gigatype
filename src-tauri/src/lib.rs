@@ -330,12 +330,49 @@ fn show_main_window_command(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-/// Headless one-shot transcription for the `--transcribe-file` / `--list-devices`
-/// path. Drives the same `TranscriptionManager::transcribe` the app uses; no
+/// Headless one-shot transcription and diagnostics path. Drives the same
+/// `TranscriptionManager::transcribe` the app uses; no
 /// mic, no VAD, no download. Returns a process exit code (0 ok, 1 runtime
 /// failure, 2 bad input/usage).
 fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     use std::time::Instant;
+
+    if args.list_accelerators {
+        let available = crate::managers::transcription::get_available_accelerators();
+        if args.json {
+            match serde_json::to_string_pretty(&available) {
+                Ok(serialized) => println!("{}", serialized),
+                Err(error) => {
+                    eprintln!("error: failed to serialize accelerator diagnostics: {error}");
+                    return 1;
+                }
+            }
+        } else {
+            println!(
+                "ORT requested={} selected={}",
+                available.ort_requested, available.ort_selected
+            );
+            if let Some(reason) = &available.ort_fallback_reason {
+                println!("fallback: {reason}");
+            }
+            for diagnostic in &available.ort {
+                let state = if diagnostic.usable {
+                    "usable"
+                } else if diagnostic.compiled {
+                    "failed"
+                } else {
+                    "not-compiled"
+                };
+                println!("  {}: {}", diagnostic.id, state);
+                if let Some(reason) = &diagnostic.reason {
+                    println!("    {reason}");
+                }
+            }
+        }
+        if args.transcribe_file.is_none() && !args.list_devices && !args.list_models {
+            return 0;
+        }
+    }
 
     // --list-devices: print registered compute devices (with indices) and exit.
     // Useful on multi-GPU machines to discover the index for --device-index.
@@ -349,7 +386,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
                 println!("  {}", d);
             }
         }
-        if args.transcribe_file.is_none() {
+        if args.transcribe_file.is_none() && !args.list_models {
             return 0;
         }
     }
@@ -490,6 +527,7 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
     } else {
         0.0
     };
+    let ort = crate::managers::transcription::get_available_accelerators();
 
     if args.json {
         println!(
@@ -498,6 +536,9 @@ fn run_headless_transcription(app: &AppHandle, args: &CliArgs) -> i32 {
                 "model": model_id,
                 "requested_device": requested_device,
                 "bound_backend": bound_backend,
+                "ort_requested": ort.ort_requested,
+                "ort_selected": ort.ort_selected,
+                "ort_fallback_reason": ort.ort_fallback_reason,
                 "audio_secs": audio_secs,
                 "load_ms": load_ms,
                 "transcribe_ms": times_ms,
@@ -659,8 +700,11 @@ pub fn run(cli_args: CliArgs) {
 
     // The headless path must run as its own instance (see the single-instance
     // note below), not forward to an already-running app.
-    let headless_mode =
-        cli_args.transcribe_file.is_some() || cli_args.list_devices || cli_args.list_models;
+    let headless_mode = cli_args.transcribe_file.is_some()
+        || cli_args.list_devices
+        || cli_args.list_accelerators
+        || cli_args.list_models
+        || cli_args.ort_accelerator.is_some();
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
@@ -674,7 +718,7 @@ pub fn run(cli_args: CliArgs) {
                 .clear_targets()
                 .targets([
                     // Console output respects RUST_LOG environment variable. In
-                    // headless mode (--transcribe-file/--list-devices/--list-models)
+                    // headless mode (transcription, device/model lists, diagnostics)
                     // stdout carries only the result (JSON or plain), so send console
                     // logs to stderr instead to keep stdout clean for CI parsing.
                     Target::new(if headless_mode {
@@ -721,7 +765,7 @@ pub fn run(cli_args: CliArgs) {
 
     // Single-instance forwards CLI args to an already-running Handy and exits.
     // That would make the headless path
-    // (--transcribe-file/--list-devices/--list-models) a silent no-op whenever the
+    // (transcription, device/model lists, diagnostics) a silent no-op whenever the
     // app is already open, so skip it in headless mode and run a standalone
     // instance instead.
     if !headless_mode {
@@ -756,8 +800,7 @@ pub fn run(cli_args: CliArgs) {
         .setup(move |app| {
             specta_builder.mount_events(app);
 
-            // Headless one-shot path (`--transcribe-file` / `--list-devices` /
-            // `--list-models`): initialize only what transcription needs — the
+            // Headless one-shot path: initialize only what transcription needs — the
             // store/paths plugins, the model + transcription managers, and the
             // transcribe-cpp backend + accelerator settings — then run on a worker
             // thread and exit. Deliberately skips the window, tray, overlay, audio
@@ -777,10 +820,24 @@ pub fn run(cli_args: CliArgs) {
                 managers::transcription::init_transcribe_backend();
                 managers::transcription::apply_accelerator_settings(&app_handle);
 
+                let ort_override_error = cli_args.ort_accelerator.and_then(|requested| {
+                    let setting = match requested {
+                        cli::CliOrtAccelerator::Auto => settings::OrtAcceleratorSetting::Auto,
+                        cli::CliOrtAccelerator::Cpu => settings::OrtAcceleratorSetting::Cpu,
+                        cli::CliOrtAccelerator::Cuda => settings::OrtAcceleratorSetting::Cuda,
+                    };
+                    managers::transcription::apply_ort_accelerator_override(setting).err()
+                });
+
                 let handle = app_handle.clone();
                 let args = cli_args.clone();
                 std::thread::spawn(move || {
-                    let code = run_headless_transcription(&handle, &args);
+                    let code = if let Some(reason) = ort_override_error {
+                        eprintln!("error: {reason}");
+                        1
+                    } else {
+                        run_headless_transcription(&handle, &args)
+                    };
                     // Drop the loaded engine before teardown: ggml-metal's global
                     // device free asserts (SIGABRT) if a model's Metal resources
                     // are still alive at C++ static-destructor time.

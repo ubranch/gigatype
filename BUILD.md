@@ -61,6 +61,38 @@ ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun 
 > [Windows build fails with path-limit errors](#windows-build-fails-with-path-limit-errors-msb3491--ftk1011--msb6003)
 > in Troubleshooting.
 
+##### Windows x64 NVIDIA CUDA 13 edition
+
+The normal Windows build remains the small CPU/Vulkan edition. Build the separate
+NVIDIA CUDA 13 edition from PowerShell 7 at the repository root:
+
+```powershell
+pwsh -File .\scripts\build-windows-cuda.ps1 -Mode All
+```
+
+The script produces unsigned, local artifacts in `dist\windows-cuda`:
+
+- `Handy_0.9.3_x64-cuda13-setup.exe` (NSIS, approximately 1.1 GB)
+- `Handy_0.9.3_x64-cuda13_en-US.msi` (approximately 1.25 GB)
+
+The CUDA suffix is intentional: these installers target Windows x64, NVIDIA
+drivers, and CUDA 13. They carry the app-local ONNX Runtime 1.24.2 CUDA 13
+provider, NVIDIA CUDA 13.0 Update 2 runtime components, and cuDNN 9.16.0.29.
+Inputs come from the official immutable release/archive URLs below; the build
+script pins versions, archive sizes, and SHA256 values and audits the extracted
+PE dependency closure before accepting either installer.
+
+- `https://github.com/microsoft/onnxruntime/releases/download/v1.24.2/onnxruntime-win-x64-gpu_cuda13-1.24.2.zip`
+- `https://developer.download.nvidia.com/compute/cuda/redist/redistrib_13.0.2.json`
+- `https://developer.download.nvidia.com/compute/cudnn/redist/redistrib_9.16.0.json`
+
+Model weights are downloaded separately and are never bundled in either
+installer. `Auto` uses CUDA only when provider registration succeeds, then
+falls back to CPU with a diagnostic reason; explicit `CUDA` fails non-zero when
+a required app-local runtime component or compatible NVIDIA driver is missing.
+Use the normal `bun run tauri build` artifacts for systems that do not need the
+larger CUDA runtime.
+
 #### Linux
 
 - Build essentials
