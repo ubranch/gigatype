@@ -173,7 +173,9 @@ fn initialize_core_logic(app_handle: &AppHandle) {
     managers::transcription::init_transcribe_backend();
 
     // Apply accelerator preferences before any model loads
-    managers::transcription::apply_accelerator_settings(app_handle);
+    if let Err(reason) = managers::transcription::apply_accelerator_settings(app_handle) {
+        log::error!("Failed to apply accelerator settings at startup: {reason:#}");
+    }
 
     // Add managers to Tauri's managed state
     app_handle.manage(recording_manager.clone());
@@ -818,7 +820,13 @@ pub fn run(cli_args: CliArgs) {
                 app_handle.manage(model_manager);
                 app_handle.manage(transcription_manager);
                 managers::transcription::init_transcribe_backend();
-                managers::transcription::apply_accelerator_settings(&app_handle);
+                if let Err(reason) =
+                    managers::transcription::apply_accelerator_settings(&app_handle)
+                {
+                    log::error!(
+                        "Failed to apply persisted accelerator settings at startup: {reason:#}"
+                    );
+                }
 
                 let ort_override_error = cli_args.ort_accelerator.and_then(|requested| {
                     let setting = match requested {

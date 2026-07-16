@@ -5,7 +5,7 @@ use crate::settings::{
     get_settings, AppSettings, ModelUnloadTimeout, OrtAcceleratorSetting,
     TranscribeAcceleratorSetting,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -462,7 +462,7 @@ impl TranscriptionManager {
         model_id: &str,
         device_index: Option<usize>,
     ) -> Result<()> {
-        apply_accelerator_settings(&self.app_handle);
+        require_accelerator_settings_for_model_load(apply_accelerator_settings(&self.app_handle))?;
 
         let load_start = std::time::Instant::now();
         debug!("Starting to load model: {}", model_id);
@@ -1808,7 +1808,7 @@ fn resolve_gpu_device(setting: TranscribeAcceleratorSetting, gpu_device: i32) ->
 /// The transcribe.cpp (whisper-family) backend is no longer set here: it is
 /// chosen at model-load time from [`select_transcribe_backend`], so changing the
 /// accelerator only needs a model reload (see `reload_model_on_next_use`).
-pub fn apply_accelerator_settings(app: &tauri::AppHandle) {
+pub fn apply_accelerator_settings(app: &tauri::AppHandle) -> Result<()> {
     let settings = get_settings(app);
 
     info!(
@@ -1825,16 +1825,23 @@ pub fn apply_accelerator_settings(app: &tauri::AppHandle) {
         info!("Using process-only ORT accelerator override: {requested:?}");
     }
 
-    match apply_ort_accelerator_preference(requested, strict) {
-        Ok(report) => {
-            if let Some(reason) = &report.fallback_reason {
-                warn!("ORT auto fallback selected {}: {}", report.selected, reason);
-            } else {
-                info!("ORT accelerator set to: {}", report.selected);
-            }
-        }
-        Err(reason) => error!("ORT accelerator selection failed: {}", reason),
+    let report = apply_ort_accelerator_preference(requested, strict).map_err(|reason| {
+        anyhow::anyhow!(
+            "ORT accelerator '{}' could not be applied: {}",
+            setting_name(requested),
+            reason
+        )
+    })?;
+    if let Some(reason) = &report.fallback_reason {
+        warn!("ORT auto fallback selected {}: {}", report.selected, reason);
+    } else {
+        info!("ORT accelerator set to: {}", report.selected);
     }
+    Ok(())
+}
+
+fn require_accelerator_settings_for_model_load(result: Result<()>) -> Result<()> {
+    result.context("failed to apply accelerator settings before model load")
 }
 
 const CUDA_NOT_COMPILED_REASON: &str = "CUDA support is not compiled into this build";
@@ -2334,5 +2341,17 @@ mod tests {
                 .selected,
             transcribe_rs::OrtAccelerator::CpuOnly
         );
+    }
+
+    #[test]
+    fn model_load_boundary_propagates_accelerator_failure() {
+        let error = require_accelerator_settings_for_model_load(Err(anyhow::anyhow!(
+            "CUDAExecutionProvider registration failed"
+        )))
+        .unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("failed to apply accelerator settings before model load"));
+        assert!(message.contains("CUDAExecutionProvider registration failed"));
     }
 }
