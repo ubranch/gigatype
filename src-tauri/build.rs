@@ -1,3 +1,5 @@
+mod build_support;
+
 fn main() {
     #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
     build_apple_intelligence_bridge();
@@ -136,8 +138,19 @@ fn stage_onnxruntime_runtime() {
 
     let cuda_build = std::env::var_os("CARGO_FEATURE_ORT_CUDA").is_some()
         && std::env::var("CARGO_CFG_TARGET_ARCH").as_deref() == Ok("x86_64");
+    let license_result = if cuda_build {
+        build_support::stage_ort_licenses(&lib_location, &dest_dir)
+    } else {
+        build_support::stage_cpu_ort_licenses(&lib_location, &dest_dir)
+    };
+    license_result.unwrap_or_else(|error| {
+        panic!(
+            "stage common ONNX Runtime licenses from {}: {error}",
+            lib_location.display()
+        )
+    });
+
     if !cuda_build {
-        remove_stale_cuda_runtime(&dest_dir);
         println!("cargo:warning=Staged CPU-only ONNX Runtime for Windows bundling");
         return;
     }
@@ -199,8 +212,14 @@ fn stage_onnxruntime_runtime() {
         let source = entry.path();
         if source.is_file() {
             let name = source.file_name().expect("CUDA license file has a name");
-            std::fs::copy(&source, destination_licenses.join(name))
-                .unwrap_or_else(|error| panic!("copy {}: {error}", source.display()));
+            let common_ort_license = matches!(
+                name.to_str(),
+                Some("onnxruntime-LICENSE.txt" | "onnxruntime-ThirdPartyNotices.txt")
+            );
+            if !common_ort_license {
+                std::fs::copy(&source, destination_licenses.join(name))
+                    .unwrap_or_else(|error| panic!("copy {}: {error}", source.display()));
+            }
         }
     }
 
@@ -234,32 +253,6 @@ fn copy_required_runtime_file(
     }
     std::fs::copy(&source, dest_dir.join(name))
         .unwrap_or_else(|error| panic!("copy {}: {error}", source.display()));
-}
-
-fn remove_stale_cuda_runtime(dest_dir: &std::path::Path) {
-    let Ok(entries) = std::fs::read_dir(dest_dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let lower = entry.file_name().to_string_lossy().to_lowercase();
-        let cuda_file = lower == "onnxruntime_providers_cuda.dll"
-            || lower == "onnxruntime_providers_shared.dll"
-            || lower == "third_party_notices-cuda.txt"
-            || lower.starts_with("cublas")
-            || lower.starts_with("cudart")
-            || lower.starts_with("cufft")
-            || lower.starts_with("cudnn")
-            || lower.starts_with("nvrtc")
-            || lower.starts_with("nvjitlink");
-        if cuda_file {
-            std::fs::remove_file(&path)
-                .unwrap_or_else(|error| panic!("remove stale {}: {error}", path.display()));
-        } else if lower == "licenses" && path.is_dir() {
-            std::fs::remove_dir_all(&path)
-                .unwrap_or_else(|error| panic!("remove stale {}: {error}", path.display()));
-        }
-    }
 }
 
 /// Stage transcribe-cpp's shared runtime libraries into `transcribe-libs/` so the

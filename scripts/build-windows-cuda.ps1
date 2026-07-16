@@ -15,6 +15,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+. (Join-Path $PSScriptRoot "windows-package-helpers.ps1")
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
 if (-not $OutputDir) {
@@ -87,24 +88,6 @@ function Get-Sha256 {
   return (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToLowerInvariant()
 }
 
-function Assert-OwnedPath {
-  param([Parameter(Mandatory)][string]$Path)
-  $root = $CacheRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
-  $full = [System.IO.Path]::GetFullPath($Path)
-  if (-not $full.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) {
-    throw "refusing to modify path outside owned cache root: $full"
-  }
-}
-
-function Reset-OwnedDirectory {
-  param([Parameter(Mandatory)][string]$Path)
-  Assert-OwnedPath $Path
-  if (Test-Path -LiteralPath $Path) {
-    Remove-Item -LiteralPath $Path -Recurse -Force
-  }
-  New-Item -ItemType Directory -Path $Path -Force | Out-Null
-}
-
 function Get-VerifiedDownload {
   param(
     [Parameter(Mandatory)][string]$Uri,
@@ -122,12 +105,12 @@ function Get-VerifiedDownload {
       Write-Host "cache hit: $(Split-Path -Leaf $Path)"
       return
     }
-    Assert-OwnedPath $Path
+    Assert-OwnedPath -Path $Path -OwnedRoot $CacheRoot
     Remove-Item -LiteralPath $Path -Force
   }
 
   $partial = "$Path.download"
-  Assert-OwnedPath $partial
+  Assert-OwnedPath -Path $partial -OwnedRoot $CacheRoot
   if (Test-Path -LiteralPath $partial) {
     Remove-Item -LiteralPath $partial -Force
   }
@@ -155,7 +138,7 @@ function Expand-VerifiedArchive {
       ((Get-Content -LiteralPath $marker -Raw).Trim() -eq $Sha256)) {
     return
   }
-  Reset-OwnedDirectory $Destination
+  Reset-OwnedDirectory -Path $Destination -OwnedRoot $CacheRoot
   Expand-Archive -LiteralPath $Archive -DestinationPath $Destination -Force
   Set-Content -LiteralPath $marker -Value $Sha256 -NoNewline
 }
@@ -313,7 +296,7 @@ function Prepare-CpuRuntime {
     throw "CPU ORT archive is missing onnxruntime.dll"
   }
 
-  Reset-OwnedDirectory $runtime
+  Reset-OwnedDirectory -Path $runtime -OwnedRoot $CacheRoot
   $licenses = Join-Path $runtime "licenses"
   New-Item -ItemType Directory -Path $licenses -Force | Out-Null
   Copy-Item -LiteralPath $onnxRuntime -Destination $runtime
@@ -390,7 +373,7 @@ function Prepare-CudaRuntime {
   $cudnnExtracted = Join-Path $extracted "cudnn-$cudnnVersion-cuda13"
   Expand-VerifiedArchive $cudnnArchive $cudnnExtracted $cudnnSha256
 
-  Reset-OwnedDirectory $runtime
+  Reset-OwnedDirectory -Path $runtime -OwnedRoot $CacheRoot
   $licenses = Join-Path $runtime "licenses"
   New-Item -ItemType Directory -Path $licenses -Force | Out-Null
 
@@ -545,25 +528,6 @@ function Find-WindowsIncludeDirectories {
   return $directories
 }
 
-function Get-SingleVersionedArtifact {
-  param(
-    [Parameter(Mandatory)][string]$Directory,
-    [Parameter(Mandatory)][string]$Version,
-    [Parameter(Mandatory)][ValidateSet(".exe", ".msi")][string]$Extension,
-    [Parameter(Mandatory)][string]$Label
-  )
-
-  $artifacts = @(Get-ChildItem -LiteralPath $Directory -Filter "*$Extension" -File -ErrorAction SilentlyContinue)
-  $escapedVersion = [regex]::Escape($Version)
-  $versionPattern = "(?<![0-9])$escapedVersion(?![0-9])"
-  $matching = @($artifacts | Where-Object { $_.BaseName -match $versionPattern })
-  if ($artifacts.Count -ne 1 -or $matching.Count -ne 1) {
-    $found = if ($artifacts.Count -eq 0) { "none" } else { $artifacts.Name -join ", " }
-    throw "$Label bundle output must contain exactly one current-version artifact for $Version; found: $found"
-  }
-  return $matching[0]
-}
-
 function Build-WindowsInstallers {
   param(
     [Parameter(Mandatory)]$Prepared,
@@ -652,7 +616,7 @@ function Build-WindowsInstallers {
   }
   Set-Content -LiteralPath $cmdPath -Value $lines -Encoding ascii
   $bundleRoot = Join-Path $targetDir "release\bundle"
-  Reset-OwnedDirectory $bundleRoot
+  Reset-OwnedDirectory -Path $bundleRoot -OwnedRoot $CacheRoot
   $buildProcess = Start-Process -FilePath "cmd.exe" `
     -ArgumentList @("/d", "/c", "`"$cmdPath`"") `
     -Wait -PassThru -NoNewWindow
@@ -687,15 +651,14 @@ function Assert-PackageRoot {
   )
   $handy = Get-ChildItem -LiteralPath $Root -Filter "handy.exe" -File -Recurse | Select-Object -First 1
   if (-not $handy) { throw "package is missing handy.exe: $Root" }
-  $unexpectedModels = @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object {
-      $name = $_.Name.ToLowerInvariant()
-      $name -ne "silero_vad_v4.onnx" -and (
-        $name.EndsWith(".onnx.data", [System.StringComparison]::Ordinal) -or
-        $_.Extension.ToLowerInvariant() -in @(".bin", ".gguf", ".ggml", ".onnx")
-      )
-    })
+  $unexpectedModels = @(Get-UnexpectedModelWeightFiles -Root $Root)
   if ($unexpectedModels.Count -gt 0) {
     throw "package unexpectedly contains model weights: $($unexpectedModels.Name -join ', ')"
+  }
+  foreach ($license in @("onnxruntime-LICENSE.txt", "onnxruntime-ThirdPartyNotices.txt")) {
+    if (-not (Get-ChildItem -LiteralPath $Root -Filter $license -File -Recurse)) {
+      throw "$PackageEdition package is missing runtime license $license"
+    }
   }
   $dllNames = @(Get-ChildItem -LiteralPath $Root -Filter "*.dll" -File -Recurse | ForEach-Object Name)
   $cudaPatterns = @("onnxruntime_providers_cuda.dll", "cublas*.dll", "cudart*.dll", "cufft*.dll", "cudnn*.dll", "nvrtc*.dll", "nvJitLink*.dll")
@@ -714,8 +677,6 @@ function Assert-PackageRoot {
       throw "CUDA package is missing THIRD_PARTY_NOTICES-CUDA.txt"
     }
     foreach ($license in @(
-      "onnxruntime-LICENSE.txt",
-      "onnxruntime-ThirdPartyNotices.txt",
       "cuda_cudart-LICENSE.txt",
       "cuda_nvrtc-LICENSE.txt",
       "libcublas-LICENSE.txt",

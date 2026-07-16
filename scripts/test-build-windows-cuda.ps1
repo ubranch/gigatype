@@ -5,6 +5,129 @@ if (-not (Test-Path -LiteralPath $entrypoint -PathType Leaf)) {
   throw "missing CUDA build entrypoint: $entrypoint"
 }
 
+$helperModule = Join-Path $PSScriptRoot "windows-package-helpers.ps1"
+if (-not (Test-Path -LiteralPath $helperModule -PathType Leaf)) {
+  throw "missing Windows package helper module: $helperModule"
+}
+. $helperModule
+
+function Assert-ThrowsLike {
+  param(
+    [Parameter(Mandatory)][scriptblock]$Action,
+    [Parameter(Mandatory)][string]$Pattern
+  )
+
+  $caught = $null
+  try {
+    & $Action
+  } catch {
+    $caught = $_
+  }
+  if ($null -eq $caught) {
+    throw "expected action to throw: $Pattern"
+  }
+  if ($caught.Exception.Message -notlike $Pattern) {
+    throw "unexpected error '$($caught.Exception.Message)'; expected $Pattern"
+  }
+}
+
+$behaviorRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("handy-windows-helper-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $behaviorRoot | Out-Null
+try {
+  $missingArtifacts = Join-Path $behaviorRoot "missing"
+  New-Item -ItemType Directory -Path $missingArtifacts | Out-Null
+  Assert-ThrowsLike {
+    Get-SingleVersionedArtifact -Directory $missingArtifacts -Version "0.9.3" -Extension ".exe" -Label "NSIS"
+  } "*exactly one current-version artifact*"
+
+  $wrongArtifacts = Join-Path $behaviorRoot "wrong-version"
+  New-Item -ItemType Directory -Path $wrongArtifacts | Out-Null
+  New-Item -ItemType File -Path (Join-Path $wrongArtifacts "Handy_0.9.30_x64-setup.exe") | Out-Null
+  Assert-ThrowsLike {
+    Get-SingleVersionedArtifact -Directory $wrongArtifacts -Version "0.9.3" -Extension ".exe" -Label "NSIS"
+  } "*exactly one current-version artifact*"
+
+  $staleArtifacts = Join-Path $behaviorRoot "stale"
+  New-Item -ItemType Directory -Path $staleArtifacts | Out-Null
+  New-Item -ItemType File -Path (Join-Path $staleArtifacts "Handy_0.9.3_x64-setup.exe") | Out-Null
+  New-Item -ItemType File -Path (Join-Path $staleArtifacts "Handy_0.9.2_x64-setup.exe") | Out-Null
+  Assert-ThrowsLike {
+    Get-SingleVersionedArtifact -Directory $staleArtifacts -Version "0.9.3" -Extension ".exe" -Label "NSIS"
+  } "*exactly one current-version artifact*"
+
+  $duplicateArtifacts = Join-Path $behaviorRoot "duplicate"
+  New-Item -ItemType Directory -Path $duplicateArtifacts | Out-Null
+  New-Item -ItemType File -Path (Join-Path $duplicateArtifacts "Handy_0.9.3_x64-setup.exe") | Out-Null
+  New-Item -ItemType File -Path (Join-Path $duplicateArtifacts "Handy_0.9.3_x64-portable.exe") | Out-Null
+  Assert-ThrowsLike {
+    Get-SingleVersionedArtifact -Directory $duplicateArtifacts -Version "0.9.3" -Extension ".exe" -Label "NSIS"
+  } "*exactly one current-version artifact*"
+
+  $validArtifacts = Join-Path $behaviorRoot "valid"
+  New-Item -ItemType Directory -Path $validArtifacts | Out-Null
+  $validName = "Handy_0.9.3_x64-setup.exe"
+  New-Item -ItemType File -Path (Join-Path $validArtifacts $validName) | Out-Null
+  $artifact = Get-SingleVersionedArtifact -Directory $validArtifacts -Version "0.9.3" -Extension ".exe" -Label "NSIS"
+  if ($artifact.Name -ne $validName) { throw "valid current-version artifact was not returned" }
+
+  $validMsiArtifacts = Join-Path $behaviorRoot "valid-msi"
+  New-Item -ItemType Directory -Path $validMsiArtifacts | Out-Null
+  $validMsiName = "Handy_0.9.3_x64_en-US.msi"
+  New-Item -ItemType File -Path (Join-Path $validMsiArtifacts $validMsiName) | Out-Null
+  $msiArtifact = Get-SingleVersionedArtifact -Directory $validMsiArtifacts -Version "0.9.3" -Extension ".msi" -Label "MSI"
+  if ($msiArtifact.Name -ne $validMsiName) { throw "valid current-version MSI artifact was not returned" }
+
+  $targetRoot = Join-Path $behaviorRoot "cargo-target-cpu"
+  $bundleRoot = Join-Path $targetRoot "release\bundle"
+  New-Item -ItemType Directory -Path $bundleRoot -Force | Out-Null
+  New-Item -ItemType File -Path (Join-Path $targetRoot "compiled-cache.obj") | Out-Null
+  New-Item -ItemType File -Path (Join-Path $bundleRoot "stale-installer.exe") | Out-Null
+  Reset-OwnedDirectory -Path $bundleRoot -OwnedRoot $behaviorRoot
+  if (-not (Test-Path -LiteralPath (Join-Path $targetRoot "compiled-cache.obj") -PathType Leaf)) {
+    throw "owned bundle cleanup removed reusable parent target content"
+  }
+  if (@(Get-ChildItem -LiteralPath $bundleRoot -Force).Count -ne 0) {
+    throw "owned bundle cleanup left stale bundle content"
+  }
+
+  $allowedModels = Join-Path $behaviorRoot "allowed-model-lower"
+  New-Item -ItemType Directory -Path $allowedModels | Out-Null
+  New-Item -ItemType File -Path (Join-Path $allowedModels "silero_vad_v4.onnx") | Out-Null
+  if (@(Get-UnexpectedModelWeightFiles -Root $allowedModels).Count -ne 0) {
+    throw "exact Silero runtime model identity must be allowed"
+  }
+
+  $allowedCaseVariant = Join-Path $behaviorRoot "allowed-model-upper"
+  New-Item -ItemType Directory -Path $allowedCaseVariant | Out-Null
+  # Windows package identity is case-insensitive, so this exact case variant is the same allowed runtime model.
+  New-Item -ItemType File -Path (Join-Path $allowedCaseVariant "SILERO_VAD_V4.ONNX") | Out-Null
+  if (@(Get-UnexpectedModelWeightFiles -Root $allowedCaseVariant).Count -ne 0) {
+    throw "exact Silero runtime model identity must be allowed case-insensitively"
+  }
+
+  $lookalikeModels = Join-Path $behaviorRoot "lookalike-models"
+  New-Item -ItemType Directory -Path $lookalikeModels | Out-Null
+  foreach ($name in @(
+    "silero_vad_v4.onnx.data",
+    "prefix-silero_vad_v4.onnx",
+    "silero_vad_v4-suffix.onnx"
+  )) {
+    New-Item -ItemType File -Path (Join-Path $lookalikeModels $name) | Out-Null
+  }
+  $lookalikes = @(Get-UnexpectedModelWeightFiles -Root $lookalikeModels)
+  if ($lookalikes.Count -ne 3) {
+    throw "Silero prefix, suffix, and external-data lookalikes must all be rejected"
+  }
+} finally {
+  $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+  $resolvedBehaviorRoot = [System.IO.Path]::GetFullPath($behaviorRoot)
+  if (-not $resolvedBehaviorRoot.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
+    (Split-Path -Leaf $resolvedBehaviorRoot) -notlike "handy-windows-helper-*") {
+    throw "refusing to remove unexpected helper-test path: $resolvedBehaviorRoot"
+  }
+  Remove-Item -LiteralPath $resolvedBehaviorRoot -Recurse -Force
+}
+
 $entrypointSource = Get-Content -LiteralPath $entrypoint -Raw
 if ($entrypointSource -match '\$LASTEXITCODE') {
   throw "CUDA build entrypoint must use explicit Process.ExitCode; LASTEXITCODE is unset in WSL-launched PowerShell 7.6"
@@ -46,9 +169,6 @@ if ($entrypointSource -notmatch 'set `"CL=\$compilerFlags`"') {
 if ($entrypointSource -notmatch 'CC_SHELL_ESCAPED_FLAGS=1') {
   throw "CUDA build entrypoint must preserve quoted include paths containing spaces"
 }
-if ($entrypointSource -notmatch 'silero_vad_v4\.onnx') {
-  throw "CUDA package audit must allow only the required bundled Silero VAD ONNX model"
-}
 if ($entrypointSource -notmatch 'cuda_cudart-LICENSE\.txt') {
   throw "CUDA package audit must require prepared runtime license files"
 }
@@ -73,27 +193,6 @@ if ($entrypointSource -notmatch 'function Prepare-CpuRuntime') {
 if ($entrypointSource -notmatch '\$prepared\s*=\s*if\s*\(\$Edition\s*-eq\s*"Cuda"\)\s*\{\s*Prepare-CudaRuntime\s*\}\s*else\s*\{\s*Prepare-CpuRuntime\s*\}') {
   throw "runtime preparation must dispatch by edition"
 }
-if ($entrypointSource -notmatch 'function Get-SingleVersionedArtifact') {
-  throw "installer selection must use a current-version singleton helper"
-}
-if ($entrypointSource -notmatch '\[regex\]::Escape\(\$Version\)') {
-  throw "installer selection must match an exact escaped version token"
-}
-if ($entrypointSource -match '(?s)\$(nsis|msi)\s*=\s*Get-ChildItem.+?Select-Object -First 1') {
-  throw "installer selection must never take the first arbitrary bundle artifact"
-}
-if ($entrypointSource -match 'Reset-OwnedDirectory \$targetDir') {
-  throw "installer build must preserve the reusable compiled target directory"
-}
-$bundleResetIndex = $entrypointSource.IndexOf('Reset-OwnedDirectory $bundleRoot')
-$nativeBuildIndex = $entrypointSource.IndexOf('Start-Process -FilePath "cmd.exe"')
-if ($bundleResetIndex -lt 0 -or $nativeBuildIndex -lt 0 -or $bundleResetIndex -gt $nativeBuildIndex) {
-  throw "owned edition bundle output must be reset before the native build"
-}
-if ($entrypointSource -notmatch '(?s)Get-SingleVersionedArtifact.+?\$version.+?\.exe.+?Get-SingleVersionedArtifact.+?\$version.+?\.msi') {
-  throw "NSIS and MSI selection must each require exactly one current-version artifact"
-}
-
 function Assert-ModelWeightRejected {
   param(
     [Parameter(Mandatory)][ValidateSet("Cuda", "Cpu")][string]$Edition,
@@ -124,12 +223,45 @@ function Assert-ModelWeightRejected {
   }
 }
 
+function Assert-CpuOrtLicenseRequired {
+  param([Parameter(Mandatory)][string]$MissingName)
+
+  $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+  $root = Join-Path $tempBase ("handy-package-license-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Path $root | Out-Null
+  try {
+    New-Item -ItemType File -Path (Join-Path $root "handy.exe") | Out-Null
+    foreach ($name in @("onnxruntime-LICENSE.txt", "onnxruntime-ThirdPartyNotices.txt")) {
+      if ($name -ne $MissingName) {
+        New-Item -ItemType File -Path (Join-Path $root $name) | Out-Null
+      }
+    }
+    try {
+      $null = & $entrypoint -Mode Audit -Edition Cpu -PackageRoot $root -Json
+      throw "CPU package audit accepted missing ORT license $MissingName"
+    } catch {
+      if ($_.Exception.Message -notlike "*missing*$MissingName*") {
+        throw "CPU package audit did not require $MissingName`: $($_.Exception.Message)"
+      }
+    }
+  } finally {
+    $resolvedRoot = [System.IO.Path]::GetFullPath($root)
+    if (-not $resolvedRoot.StartsWith($tempBase, [System.StringComparison]::OrdinalIgnoreCase) -or
+      (Split-Path -Leaf $resolvedRoot) -notlike "handy-package-license-*") {
+      throw "refusing to remove unexpected package-license test path: $resolvedRoot"
+    }
+    Remove-Item -LiteralPath $resolvedRoot -Recurse -Force
+  }
+}
+
 Assert-ModelWeightRejected -Edition Cpu -FileName "legacy-model.bin"
 Assert-ModelWeightRejected -Edition Cpu -FileName "legacy-model.ggml"
 Assert-ModelWeightRejected -Edition Cpu -FileName "current-model.onnx.data"
 Assert-ModelWeightRejected -Edition Cuda -FileName "current-model.gguf"
 Assert-ModelWeightRejected -Edition Cuda -FileName "current-model.onnx"
 Assert-ModelWeightRejected -Edition Cuda -FileName "current-model.onnx.data"
+Assert-CpuOrtLicenseRequired -MissingName "onnxruntime-LICENSE.txt"
+Assert-CpuOrtLicenseRequired -MissingName "onnxruntime-ThirdPartyNotices.txt"
 
 $verifier = Join-Path $PSScriptRoot "verify-windows-cuda.ps1"
 $verifierSource = Get-Content -LiteralPath $verifier -Raw
