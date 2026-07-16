@@ -5,7 +5,7 @@ use crate::settings::{
     get_settings, AppSettings, ModelUnloadTimeout, OrtAcceleratorSetting,
     TranscribeAcceleratorSetting,
 };
-use anyhow::{Context, Result};
+use anyhow::Result;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use specta::Type;
@@ -32,6 +32,20 @@ use transcribe_rs::{
     },
     SpeechModel, TranscribeOptions,
 };
+
+mod model_load_control {
+    use anyhow::{Context, Result};
+
+    pub(super) struct Permit(());
+
+    pub(super) fn run<T>(
+        apply_settings: impl FnOnce() -> Result<()>,
+        loader: impl FnOnce(Permit) -> Result<T>,
+    ) -> Result<T> {
+        apply_settings().context("failed to apply accelerator settings before model load")?;
+        loader(Permit(()))
+    }
+}
 
 const STREAM_PERF_LOG_INTERVAL: Duration = Duration::from_secs(5);
 const STREAM_FINALIZE_REPLY_TIMEOUT: Duration = Duration::from_secs(30);
@@ -462,8 +476,18 @@ impl TranscriptionManager {
         model_id: &str,
         device_index: Option<usize>,
     ) -> Result<()> {
-        require_accelerator_settings_for_model_load(apply_accelerator_settings(&self.app_handle))?;
+        model_load_control::run(
+            || apply_accelerator_settings(&self.app_handle),
+            |permit| self.load_model_with_applied_accelerator(permit, model_id, device_index),
+        )
+    }
 
+    fn load_model_with_applied_accelerator(
+        &self,
+        _permit: model_load_control::Permit,
+        model_id: &str,
+        device_index: Option<usize>,
+    ) -> Result<()> {
         let load_start = std::time::Instant::now();
         debug!("Starting to load model: {}", model_id);
 
@@ -1840,10 +1864,6 @@ pub fn apply_accelerator_settings(app: &tauri::AppHandle) -> Result<()> {
     Ok(())
 }
 
-fn require_accelerator_settings_for_model_load(result: Result<()>) -> Result<()> {
-    result.context("failed to apply accelerator settings before model load")
-}
-
 const CUDA_NOT_COMPILED_REASON: &str = "CUDA support is not compiled into this build";
 const CUDA_REGISTRATION_FAILURE_REASON: &str = "CUDAExecutionProvider registration failed: required app-local CUDA 13 or cuDNN runtime component is unavailable";
 
@@ -2031,14 +2051,8 @@ fn apply_ort_accelerator_preference(
     requested: OrtAcceleratorSetting,
     strict: bool,
 ) -> std::result::Result<OrtSelectionReport, String> {
-    let resolved = match resolve_ort_accelerator(requested, runtime_cuda_diagnostic()) {
-        Ok(resolved) => resolved,
-        Err(reason) if strict => return Err(reason),
-        Err(reason) => ResolvedOrtAccelerator {
-            selected: transcribe_rs::OrtAccelerator::CpuOnly,
-            fallback_reason: Some(reason),
-        },
-    };
+    let resolved =
+        resolve_ort_accelerator_preference(requested, strict, runtime_cuda_diagnostic())?;
 
     transcribe_rs::set_ort_accelerator(resolved.selected);
     let report = OrtSelectionReport {
@@ -2051,6 +2065,21 @@ fn apply_ort_accelerator_preference(
         .lock()
         .unwrap_or_else(|error| error.into_inner()) = report.clone();
     Ok(report)
+}
+
+fn resolve_ort_accelerator_preference(
+    requested: OrtAcceleratorSetting,
+    strict: bool,
+    cuda: &OrtAcceleratorDiagnostic,
+) -> std::result::Result<ResolvedOrtAccelerator, String> {
+    match resolve_ort_accelerator(requested, cuda) {
+        Ok(resolved) => Ok(resolved),
+        Err(reason) if strict => Err(reason),
+        Err(reason) => Ok(ResolvedOrtAccelerator {
+            selected: transcribe_rs::OrtAccelerator::CpuOnly,
+            fallback_reason: Some(reason),
+        }),
+    }
 }
 
 pub fn apply_ort_accelerator_override(
@@ -2343,15 +2372,64 @@ mod tests {
         );
     }
 
-    #[test]
-    fn model_load_boundary_propagates_accelerator_failure() {
-        let error = require_accelerator_settings_for_model_load(Err(anyhow::anyhow!(
-            "CUDAExecutionProvider registration failed"
-        )))
-        .unwrap_err();
+    fn run_test_model_load_control(
+        persisted: OrtAcceleratorSetting,
+        process_override: Option<OrtAcceleratorSetting>,
+        loader_calls: &mut usize,
+    ) -> Result<&'static str> {
+        let failed_cuda = cuda_diagnostic_from_probe(
+            true,
+            Err("CUDAExecutionProvider registration failed".to_string()),
+        );
+        model_load_control::run(
+            || {
+                let (requested, strict) =
+                    effective_ort_accelerator_preference(persisted, process_override);
+                resolve_ort_accelerator_preference(requested, strict, &failed_cuda)
+                    .map(|_| ())
+                    .map_err(anyhow::Error::msg)
+            },
+            |_| {
+                *loader_calls += 1;
+                Ok("loaded")
+            },
+        )
+    }
 
-        let message = format!("{error:#}");
-        assert!(message.contains("failed to apply accelerator settings before model load"));
-        assert!(message.contains("CUDAExecutionProvider registration failed"));
+    #[test]
+    fn persisted_explicit_failure_stops_before_loader() {
+        let mut loader_calls = 0;
+        let error =
+            run_test_model_load_control(OrtAcceleratorSetting::Cuda, None, &mut loader_calls)
+                .unwrap_err();
+
+        assert_eq!(loader_calls, 0);
+        assert!(
+            format!("{error:#}").contains("failed to apply accelerator settings before model load")
+        );
+    }
+
+    #[test]
+    fn process_explicit_failure_stops_before_loader() {
+        let mut loader_calls = 0;
+        let result = run_test_model_load_control(
+            OrtAcceleratorSetting::Auto,
+            Some(OrtAcceleratorSetting::Cuda),
+            &mut loader_calls,
+        );
+
+        assert!(result.is_err());
+        assert_eq!(loader_calls, 0);
+    }
+
+    #[test]
+    fn auto_fallback_proceeds_to_loader() {
+        let mut loader_calls = 0;
+        let result =
+            run_test_model_load_control(OrtAcceleratorSetting::Auto, None, &mut loader_calls)
+                .unwrap();
+
+        assert_eq!(result, "loaded");
+        assert_eq!(loader_calls, 1);
     }
 }
