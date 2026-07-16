@@ -167,6 +167,41 @@ describe("dropdown accessibility", () => {
     expect(document.activeElement).toBe(trigger);
   });
 
+  test("mouse option selection closes and restores trigger focus", async () => {
+    const user = userEvent.setup();
+    const selections: string[] = [];
+
+    const StatefulDropdown = () => {
+      const [selectedValue, setSelectedValue] = useState<string | null>(null);
+      return (
+        <I18nextProvider i18n={i18n}>
+          <Dropdown
+            ariaLabel="ONNX Acceleration"
+            options={options}
+            selectedValue={selectedValue}
+            onSelect={(value) => {
+              selections.push(value);
+              setSelectedValue(value);
+            }}
+          />
+        </I18nextProvider>
+      );
+    };
+
+    const view = render(<StatefulDropdown />);
+    const trigger = view.getByRole("button", {
+      name: "ONNX Acceleration",
+    });
+
+    await user.click(trigger);
+    await user.click(view.getByRole("option", { name: "CUDA" }));
+
+    expect(selections).toEqual(["cuda"]);
+    expect(view.queryByRole("listbox")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(trigger);
+  });
+
   test("a disabled dropdown cannot open", async () => {
     const user = userEvent.setup();
     const view = renderDropdown({ disabled: true });
