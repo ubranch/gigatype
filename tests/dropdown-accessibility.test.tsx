@@ -3,6 +3,8 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 import i18next from "i18next";
 import React, { useState } from "react";
 import { I18nextProvider } from "react-i18next";
+import GigaTypeLogo from "../src/components/icons/GigaTypeLogo";
+import GigaTypeMark from "../src/components/icons/GigaTypeMark";
 import { Dropdown } from "../src/components/ui/Dropdown";
 
 if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
@@ -212,5 +214,48 @@ describe("dropdown accessibility", () => {
     expect(trigger.disabled).toBe(true);
     await user.click(trigger);
     expect(view.queryByRole("listbox")).toBeNull();
+  });
+});
+
+describe("GigaType branding accessibility", () => {
+  test("labels a standalone mark by default", () => {
+    const view = render(<GigaTypeMark />);
+
+    expect(view.getByRole("img", { name: "GigaType" })).toBeTruthy();
+  });
+
+  test("forwards a custom accessible name and description", () => {
+    const view = render(
+      <>
+        <GigaTypeMark
+          aria-label="GigaType status"
+          aria-describedby="gigatype-description"
+        />
+        <span id="gigatype-description">Ready</span>
+      </>,
+    );
+    const mark = view.getByRole("img", { name: "GigaType status" });
+
+    expect(mark.getAttribute("aria-describedby")).toBe("gigatype-description");
+  });
+
+  test("allows decorative marks without a duplicate accessible label", () => {
+    const view = render(<GigaTypeMark aria-hidden="true" />);
+    const mark = view.container.querySelector("svg");
+
+    expect(view.queryByRole("img", { name: "GigaType" }) === null).toBe(true);
+    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    expect(mark?.hasAttribute("aria-label")).toBe(false);
+    expect(mark?.hasAttribute("role")).toBe(false);
+  });
+
+  test("exposes one label for the logo and hides its nested mark", () => {
+    const view = render(<GigaTypeLogo />);
+    const logo = view.getByRole("img", { name: "GigaType" });
+    const mark = logo.querySelector("svg");
+
+    expect(view.getAllByRole("img", { name: "GigaType" }).length).toBe(1);
+    expect(mark?.getAttribute("aria-hidden")).toBe("true");
+    expect(mark?.hasAttribute("aria-label")).toBe(false);
   });
 });
