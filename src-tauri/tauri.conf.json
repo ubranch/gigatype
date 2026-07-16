@@ -71,6 +71,9 @@
       }
     },
     "windows": {
+      "wix": {
+        "version": "0.9.3.1"
+      },
       "nsis": {
         "template": "nsis/installer.nsi"
       }
