@@ -1,4 +1,4 @@
-import { type FC, useEffect, useState } from "react";
+import { type FC, useEffect, useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { SettingContainer } from "../ui/SettingContainer";
 import { Dropdown, type DropdownOption } from "../ui/Dropdown";
@@ -56,11 +56,19 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
 }) => {
   const { t } = useTranslation();
   const { getSetting, updateSetting, isUpdating } = useSettings();
+  const ortDiagnosticId = useId();
+
+  const currentAccelerator = getSetting("transcribe_accelerator") ?? "auto";
+  const currentGpuDevice = getSetting("transcribe_gpu_device") ?? -1;
+  const currentOrt = getSetting("ort_accelerator") ?? "auto";
 
   const [transcribeOptions, setTranscribeOptions] = useState<DropdownOption[]>(
     [],
   );
   const [ortOptions, setOrtOptions] = useState<DropdownOption[]>([]);
+  const [ortUnavailableDiagnostic, setOrtUnavailableDiagnostic] = useState<
+    string | null
+  >(null);
 
   useEffect(() => {
     commands.getAvailableAccelerators().then((available) => {
@@ -86,29 +94,51 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
       opts.push({ value: "cpu", label: "CPU" });
       setTranscribeOptions(opts);
 
-      setOrtOptions(
-        available.ort
-          .filter((diagnostic) => diagnostic.usable)
-          .map((diagnostic) => ({
-            value: diagnostic.id,
-            label:
-              ORT_LABELS[diagnostic.id as OrtAcceleratorSetting] ??
-              diagnostic.id,
-          })),
+      const currentDiagnostic = available.ort.find(
+        (diagnostic) => diagnostic.id === currentOrt,
       );
-    });
-  }, [t]);
+      const options = available.ort
+        .filter(
+          (diagnostic) => diagnostic.usable || diagnostic.id === currentOrt,
+        )
+        .map((diagnostic) => ({
+          value: diagnostic.id,
+          label:
+            ORT_LABELS[diagnostic.id as OrtAcceleratorSetting] ?? diagnostic.id,
+          disabled: !diagnostic.usable,
+        }));
+      if (!options.some((option) => option.value === currentOrt)) {
+        options.push({
+          value: currentOrt,
+          label: ORT_LABELS[currentOrt as OrtAcceleratorSetting] ?? currentOrt,
+          disabled: true,
+        });
+      }
+      setOrtOptions(options);
 
-  const currentAccelerator = getSetting("transcribe_accelerator") ?? "auto";
-  const currentGpuDevice = getSetting("transcribe_gpu_device") ?? -1;
+      if (currentDiagnostic?.usable === false || !currentDiagnostic) {
+        const label =
+          ORT_LABELS[currentOrt as OrtAcceleratorSetting] ?? currentOrt;
+        setOrtUnavailableDiagnostic(
+          currentDiagnostic?.reason
+            ? t("settings.advanced.acceleration.ort.unavailable", {
+                accelerator: label,
+                reason: currentDiagnostic.reason,
+              })
+            : t("settings.advanced.acceleration.ort.unavailableUnknown", {
+                accelerator: label,
+              }),
+        );
+      } else {
+        setOrtUnavailableDiagnostic(null);
+      }
+    });
+  }, [currentOrt, t]);
+
   const currentTranscribe = encodeTranscribeValue(
     currentAccelerator as TranscribeAcceleratorSetting,
     currentGpuDevice as number,
   );
-  const currentOrt = getSetting("ort_accelerator") ?? "auto";
-  const selectableOrt = ortOptions.some((option) => option.value === currentOrt)
-    ? currentOrt
-    : "auto";
 
   const handleTranscribeChange = async (value: string) => {
     const { accelerator, gpuDevice } = decodeTranscribeValue(value);
@@ -144,15 +174,29 @@ export const AccelerationSelector: FC<AccelerationSelectorProps> = ({
           grouped={grouped}
           layout="horizontal"
         >
-          <Dropdown
-            ariaLabel={t("settings.advanced.acceleration.ort.title")}
-            options={ortOptions}
-            selectedValue={selectableOrt}
-            onSelect={(value) =>
-              updateSetting("ort_accelerator", value as OrtAcceleratorSetting)
-            }
-            disabled={isUpdating("ort_accelerator")}
-          />
+          <div>
+            <Dropdown
+              ariaLabel={t("settings.advanced.acceleration.ort.title")}
+              ariaDescribedBy={
+                ortUnavailableDiagnostic ? ortDiagnosticId : undefined
+              }
+              options={ortOptions}
+              selectedValue={currentOrt}
+              onSelect={(value) =>
+                updateSetting("ort_accelerator", value as OrtAcceleratorSetting)
+              }
+              disabled={isUpdating("ort_accelerator")}
+            />
+            {ortUnavailableDiagnostic && (
+              <p
+                id={ortDiagnosticId}
+                role="status"
+                className="mt-1 max-w-[260px] text-xs text-red-500"
+              >
+                {ortUnavailableDiagnostic}
+              </p>
+            )}
+          </div>
         </SettingContainer>
       )}
     </>

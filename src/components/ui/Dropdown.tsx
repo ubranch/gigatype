@@ -10,6 +10,7 @@ export interface DropdownOption {
 interface DropdownProps {
   options: DropdownOption[];
   ariaLabel?: string;
+  ariaDescribedBy?: string;
   className?: string;
   selectedValue: string | null;
   onSelect: (value: string) => void;
@@ -21,6 +22,7 @@ interface DropdownProps {
 export const Dropdown: React.FC<DropdownProps> = ({
   options,
   ariaLabel,
+  ariaDescribedBy,
   selectedValue,
   onSelect,
   className = "",
@@ -75,6 +77,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   const handleSelect = (value: string) => {
     onSelect(value);
     setIsOpen(false);
+    triggerRef.current?.focus();
   };
 
   const handleToggle = () => {
@@ -125,6 +128,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
         ref={triggerRef}
         type="button"
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
         aria-controls={menuId}
         aria-expanded={isOpen}
         aria-haspopup="listbox"

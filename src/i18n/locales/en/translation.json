@@ -262,7 +262,9 @@
         },
         "ort": {
           "title": "ONNX Acceleration",
-          "description": "Hardware acceleration for ONNX models, including GigaAM. Auto uses CUDA only when this build contains a usable CUDA runtime; explicit CUDA fails instead of silently falling back."
+          "description": "Hardware acceleration for ONNX models, including GigaAM. Auto uses CUDA only when this build contains a usable CUDA runtime; explicit CUDA fails instead of silently falling back.",
+          "unavailable": "{{accelerator}} is unavailable: {{reason}}",
+          "unavailableUnknown": "{{accelerator}} is unavailable in this build."
         },
         "gpuDevice": {
           "auto": "Auto"

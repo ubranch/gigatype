@@ -5,7 +5,7 @@ import React, { useState } from "react";
 import { I18nextProvider } from "react-i18next";
 import { Dropdown } from "../src/components/ui/Dropdown";
 
-GlobalRegistrator.register();
+if (!GlobalRegistrator.isRegistered) GlobalRegistrator.register();
 
 const { cleanup, render, within } = await import("@testing-library/react");
 const userEvent = (await import("@testing-library/user-event")).default;
@@ -157,12 +157,14 @@ describe("dropdown accessibility", () => {
     await user.keyboard("{Enter}");
     expect(selections).toEqual(["cpu"]);
     expect(view.queryByRole("listbox")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
 
     await user.click(trigger);
     await user.keyboard("{ArrowDown}");
     await user.keyboard(" ");
     expect(selections).toEqual(["cpu", "cuda"]);
     expect(view.queryByRole("listbox")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
   });
 
   test("a disabled dropdown cannot open", async () => {
