@@ -62,7 +62,7 @@ expected package paths:
 - `dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe`
 - `dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi`
 
-contract tests and `Plan` mode do not prove compiled packages or runtime behavior. only successful `All` runs produce local package/runtime evidence, and that evidence applies to the exact artifacts and machine tested.
+contract tests and `Plan` mode prove configuration and command contracts only; they provide no package or runtime proof. `scripts/build-windows-cuda.ps1 -Mode Audit` proves package content for supplied artifacts. `scripts/verify-windows-cuda.ps1 -Mode Verify` proves runtime behavior for supplied installers. build-script `All` builds and audits the selected edition; verifier `All` builds, audits, and verifies the CUDA edition end to end. all evidence applies only to the exact artifacts and machine tested.
 
 ## Architecture
 

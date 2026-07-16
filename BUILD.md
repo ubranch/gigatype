@@ -197,7 +197,7 @@ for both `gigaam-multilingual-220m-fp32-cuda` and `gigaam-multilingual-600m-fp32
 - CUDA best transcription time below CPU best transcription time
 - recorded load time, every transcription time, best time, audio duration, real-time factor, transcript, normalized text, WER, and provider log
 
-for the 600M CUDA model, the verifier launches a dedicated measured process and samples GPU memory while that exact PID is alive. it accepts either `nvidia-smi` compute-process memory or the Windows GPU Process Memory/Dedicated Usage counter when WDDM reports `N/A`, but requires non-zero VRAM attributed to the exact `GigaType.exe` PID. total GPU utilization or another process is not proof.
+for the 600M CUDA model, the verifier launches a dedicated measured process and samples GPU memory while that exact PID is alive. `nvidia-smi` establishes exact compute-process PID membership and records the matching row. accepted non-zero `used_memory_mb` is always derived from the Windows `\GPU Process Memory(*)\Dedicated Usage` counters for that PID. whether the `nvidia-smi` memory field is numeric or `N/A` changes only the recorded source label; its memory value is not accepted as the measurement. total GPU utilization or another process is not proof.
 
 these gates prove the specific locally built artifacts, machine, driver, and pinned fixture used by the command. they do not establish a universal performance number or prove a separately uploaded release asset.
 

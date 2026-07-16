@@ -2,12 +2,12 @@
 
 > Private, unofficial fork of cjpais/Handy. GigaType preserves upstream MIT attribution and adds GigaAM Multilingual plus verified Windows CUDA packaging. It is not endorsed by or affiliated with upstream Handy.
 
-GigaType is a local desktop speech-to-text application: press a shortcut, speak, and paste the transcription into the focused text field. release `0.9.3-gigatype.1` packages Windows x64 in separate CPU and NVIDIA CUDA 13 editions.
+GigaType is a local desktop speech-to-text application: press a shortcut, speak, and paste the transcription into the focused text field. version `0.9.3-gigatype.1` targets separate CPU and NVIDIA CUDA 13 packages for Windows x64.
 
 ## What this fork adds
 
 - four pinned GigaAM Multilingual CTC choices covering `uz`, `kk`, `ky`, `ru`, and `en`
-- separate CPU and NVIDIA CUDA 13 Windows x64 packages, with package-content and execution-provider audits
+- Windows x64 CPU and NVIDIA CUDA 13 packaging, with package-content and execution-provider audits
 - explicit `Auto`, `CPU`, and `CUDA` behavior for ONNX Runtime models
 - independent GigaType application identity, with upstream source history and MIT attribution preserved
 - no upstream updater or signing identity; private installers are unsigned and updates are installed manually
@@ -16,7 +16,7 @@ speech recognition, VAD, history, and text insertion run locally. installers do 
 
 ## Download: CPU or CUDA
 
-release version: `0.9.3-gigatype.1`. Windows x64 is the only packaged release target.
+when release `0.9.3-gigatype.1` is published, it targets the four Windows x64 assets below. no packaged release is planned for other platforms.
 
 | edition | installer                                        | use it when                                                      |
 | ------- | ------------------------------------------------ | ---------------------------------------------------------------- |
@@ -27,25 +27,26 @@ release version: `0.9.3-gigatype.1`. Windows x64 is the only packaged release ta
 
 choose one package format and one edition. the CPU edition is smaller and does not include CUDA runtime libraries. the CUDA edition requires a compatible NVIDIA display driver; CUDA developer tools are not required.
 
-assets are distributed through the private GigaType release. access requires permission to the private repository.
+when published, the four assets will be distributed with the private GigaType release. access requires permission to the private repository.
 
 ## Install on Windows
 
-1. download one installer and find its SHA256 in the matching private release notes.
+1. after the private release is published, download one installer and find its SHA256 in the matching release notes.
 2. verify the local file with the command in [Verify SHA256](#verify-sha256). stop if the values differ.
 3. run the `.exe` setup or `.msi`; do not install both formats.
-4. because this private release is unsigned, Windows may show an unknown-publisher or Microsoft Defender SmartScreen warning. only after the SHA256 matches, select `More info -> Run anyway` when that option is shown.
-5. launch GigaType and allow microphone access when Windows requests it.
+4. installers published by this private fork are unsigned, so Windows may show an unknown-publisher or Microsoft Defender SmartScreen warning. only after the SHA256 matches, select `More info -> Run anyway` when that option is shown.
+5. launch GigaType. on the Windows onboarding microphone card, select `Open Settings`. in `Settings -> Privacy & security -> Microphone`, enable `Microphone access` and `Let desktop apps access your microphone`, then return to GigaType. repeat this settings step until onboarding shows the permission as granted.
 
-the private release has no automatic updater. verify and install a newer private package manually when one is published.
+GigaType has no automatic updater. verify and install a newer private package manually when one is published.
 
 ## First transcription
 
-1. open GigaType, then open the model selector.
-2. download and select `GigaAM Multilingual 220M INT8` on CPU, or the matching GPU recommendation below. wait until the model is marked downloaded.
-3. leave the ONNX Runtime accelerator on `Auto`, or choose `CPU`/`CUDA` explicitly when diagnosing the selected edition.
-4. the default Windows transcription shortcut is `Ctrl+Space`, with push-to-talk enabled. configure either setting if that workflow is not convenient.
-5. focus a text field, hold the shortcut while speaking, then release it. if push-to-talk is disabled, press once to start and once to stop. GigaType transcribes locally and inserts the result into the focused application.
+1. open GigaType and complete the Windows microphone onboarding described above.
+2. in onboarding or the model selector, click `Show all models` before choosing a GigaAM entry; GigaAM models are not shown among the recommended cards.
+3. download and select `GigaAM Multilingual 220M INT8` on CPU, or the matching GPU recommendation below. wait until the model is marked downloaded.
+4. `Auto` is the default ONNX Runtime accelerator. to inspect or change it, open `Settings -> Advanced`, enable `Experimental Features`, then under `Experimental` use `ONNX Acceleration`. choose `CPU` or `CUDA` explicitly only when needed for the selected edition or diagnostics.
+5. the default Windows transcription shortcut is `Ctrl+Space`, with push-to-talk enabled. configure either setting if that workflow is not convenient.
+6. focus a text field, hold the shortcut while speaking, then release it. if push-to-talk is disabled, press once to start and once to stop. GigaType transcribes locally and inserts the result into the focused application.
 
 the first model selection needs network access because model weights are not embedded in the installer.
 
@@ -105,7 +106,7 @@ after a model is downloaded and verified, transcription can run without network 
 
 ## Verify SHA256
 
-the authoritative hashes are in the private release notes and apply to the exact final asset names. for example:
+after publication, the authoritative hashes will be in the private release notes and will apply to the exact final asset names. for example:
 
 ```powershell
 $asset = Join-Path $env:USERPROFILE "Downloads\GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe"
@@ -138,7 +139,7 @@ Get-ChildItem (Join-Path $env:USERPROFILE "Downloads\GigaType_0.9.3-gigatype.1_x
 
 ## Build from source
 
-see [BUILD.md](BUILD.md) for exact prerequisites, clone commands, pinned runtime inputs, CPU/CUDA package gates, and output paths. source development remains cross-platform, but `0.9.3-gigatype.1` publishes packaged releases only for Windows x64.
+see [BUILD.md](BUILD.md) for exact prerequisites, clone commands, pinned runtime inputs, CPU/CUDA package gates, and output paths. source development remains cross-platform, but `0.9.3-gigatype.1` targets packaged releases only for Windows x64 when published.
 
 ## Repository layout
 
