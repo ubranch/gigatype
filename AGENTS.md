@@ -1,217 +1,179 @@
 # AGENTS.md
 
-This file provides guidance to AI coding assistants working with code in this repository.
+this file defines repository-specific guidance for coding agents working on GigaType.
 
-## Development Commands
+## Product identity and provenance
 
-**Prerequisites:**
+GigaType is a private, unofficial fork of `cjpais/Handy`. public application, installer, repository, and documentation surfaces use `GigaType`; the source remains MIT-licensed and preserves upstream copyright and Git history.
 
-- [Rust](https://rustup.rs/) (latest stable)
-- [Bun](https://bun.sh/) package manager
+- repository: `https://github.com/ubranch/GigaType.git`
+- current release version: `0.9.3-gigatype.1`
+- Tauri identifier: `io.github.ubranch.gigatype`
+- Windows executable: `GigaType.exe`
+- packaged release target: Windows x64 only, in separate CPU and CUDA 13 editions
+- source-development targets: Windows, macOS, and Linux
 
-**Core Development:**
+the `origin` remote intentionally remains `https://github.com/cjpais/Handy.git` for upstream comparison and future history integration. do not rewrite upstream history or casually repoint `origin`.
 
-```bash
-# Install dependencies
+historical/internal names may remain when they are not shipped branding. `HandyKeys`, `HandyKeysShortcutInput`, serialized `handy_keys`, selected `HANDY_*` compatibility environment variables, dependency URLs, and historical comments are intentional implementation details. do not mechanically rename them without a scoped migration and compatibility proof.
+
+## Development commands
+
+prerequisites are current stable Rust, Bun, and the official Tauri platform prerequisites. see [BUILD.md](BUILD.md) for full platform and package requirements.
+
+```powershell
 bun install
-
-# Run in development mode
 bun run tauri dev
-# If cmake error on macOS:
-CMAKE_POLICY_VERSION_MINIMUM=3.5 bun run tauri dev
-
-# Build for production
-bun run tauri build
-
-# Frontend only development
-bun run dev        # Start Vite dev server
-bun run build      # Build frontend (TypeScript + Vite)
-bun run preview    # Preview built frontend
+bun run build
+bun run lint
+bun run format:check
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
-**Linting and Formatting (run before committing):**
+do not run an expensive production/package build unless the task requires package proof.
 
-```bash
-bun run lint              # ESLint for frontend
-bun run lint:fix          # ESLint with auto-fix
-bun run format            # Prettier + cargo fmt
-bun run format:check      # Check formatting without changes
-bun run format:frontend   # Prettier only
-bun run format:backend    # cargo fmt only
+### Windows CPU validation
+
+```powershell
+& ./scripts/test-build-windows-cuda.ps1
+& ./scripts/build-windows-cuda.ps1 -Mode Plan -Edition Cpu -Json
+& ./scripts/build-windows-cuda.ps1 -Mode All -Edition Cpu
 ```
 
-**Model Setup (Required for Development):**
+expected package paths:
 
-```bash
-mkdir -p src-tauri/resources/models
-curl -o src-tauri/resources/models/silero_vad_v4.onnx https://blob.handy.computer/silero_vad_v4.onnx
+- `dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64-setup.exe`
+- `dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64_en-US.msi`
+
+### Windows CUDA validation
+
+```powershell
+& ./scripts/test-build-windows-cuda.ps1
+& ./scripts/test-verify-windows-cuda.ps1
+& ./scripts/build-windows-cuda.ps1 -Mode Plan -Edition Cuda -Json
+& ./scripts/verify-windows-cuda.ps1 -Mode Plan -Json
+& ./scripts/verify-windows-cuda.ps1 -Mode All -Repeat 3
 ```
 
-For detailed platform-specific build setup, see [BUILD.md](BUILD.md).
+expected package paths:
 
-## Architecture Overview
+- `dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe`
+- `dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi`
 
-Handy is a cross-platform desktop speech-to-text application built with Tauri 2.x (Rust backend + React/TypeScript frontend).
+contract tests and `Plan` mode do not prove compiled packages or runtime behavior. only successful `All` runs produce local package/runtime evidence, and that evidence applies to the exact artifacts and machine tested.
 
-### Backend Structure (src-tauri/src/)
+## Architecture
 
-- `lib.rs` - Main entry point, Tauri setup, manager initialization
-- `managers/` - Core business logic:
-  - `audio.rs` - Audio recording and device management
-  - `model.rs` - Model downloading and management
-  - `transcription.rs` - Speech-to-text processing pipeline
-  - `history.rs` - Transcription history storage
-- `audio_toolkit/` - Low-level audio processing:
-  - `audio/` - Device enumeration, recording, resampling
-  - `vad/` - Voice Activity Detection (Silero VAD)
-- `commands/` - Tauri command handlers for frontend communication
-- `cli.rs` - CLI argument definitions (clap derive)
-- `shortcut.rs` - Global keyboard shortcut handling
-- `settings.rs` - Application settings management
-- `overlay.rs` - Recording overlay window (platform-specific)
-- `signal_handle.rs` - `send_transcription_input()` reusable function
-- `utils.rs` - Platform detection helpers
+GigaType is a Tauri 2 desktop application with a Rust backend and React/TypeScript frontend.
 
-### Frontend Structure (src/)
-
-- `App.tsx` - Main component with onboarding flow
-- `components/` - React UI components:
-  - `settings/` - Settings UI
-  - `model-selector/` - Model management interface
-  - `onboarding/` - First-run experience
-  - `overlay/` - Recording overlay UI
-  - `update-checker/` - App update notifications
-  - `shared/`, `ui/`, `icons/`, `footer/` - Shared components
-- `hooks/useSettings.ts` - Settings state management hook
-- `stores/settingsStore.ts` - Zustand store for settings
-- `bindings.ts` - Auto-generated Tauri type bindings (via tauri-specta)
-- `overlay/` - Recording overlay window entry point
-- `lib/types.ts` - Shared TypeScript type definitions
-
-### Key Architecture Patterns
-
-**Manager Pattern:** Core functionality organized into managers (Audio, Model, Transcription) initialized at startup and managed via Tauri state.
-
-**Command-Event Architecture:** Frontend → Backend via Tauri commands; Backend → Frontend via events.
-
-**Pipeline Processing:** Audio → VAD → Whisper/Parakeet → Text output → Clipboard/Paste
-
-**State Flow:** Zustand → Tauri Command → Rust State → Persistence (tauri-plugin-store)
-
-### Technology Stack
-
-**Core Libraries:**
-
-- `transcribe-cpp` - Local Whisper-family inference (GGML/GGUF) with GPU acceleration
-- `transcribe-rs` - ONNX speech recognition (Parakeet, Moonshine, SenseVoice, etc.)
-- `cpal` - Cross-platform audio I/O
-- `vad-rs` - Voice Activity Detection
-- `rdev` - Global keyboard shortcuts
-- `rubato` - Audio resampling
-- `rodio` - Audio playback for feedback sounds
-
-### Application Flow
-
-1. **Initialization:** App starts minimized to tray, loads settings, initializes managers
-2. **Model Setup:** First-run downloads preferred Whisper model (Small/Medium/Turbo/Large)
-3. **Recording:** Global shortcut triggers audio recording with VAD filtering
-4. **Processing:** Audio sent to Whisper model for transcription
-5. **Output:** Text pasted to active application via system clipboard
-
-### Settings System
-
-Settings are stored using Tauri's store plugin with reactive updates:
-
-- Keyboard shortcuts (configurable, supports push-to-talk)
-- Audio devices (microphone/output selection)
-- Model preferences (Small/Medium/Turbo/Large Whisper variants)
-- Audio feedback and translation options
-
-### Single Instance Architecture
-
-The app enforces single instance behavior — launching when already running brings the settings window to front rather than creating a new process. Remote control flags (`--toggle-transcription`, etc.) work by launching a second instance that sends args to the running instance via `tauri_plugin_single_instance`, then exits.
-
-## Internationalization (i18n)
-
-All user-facing strings must use i18next translations. ESLint enforces this (no hardcoded strings in JSX).
-
-**Adding new text:**
-
-1. Add key to `src/i18n/locales/en/translation.json`
-2. Use in component: `const { t } = useTranslation(); t('key.path')`
-
-**File structure:**
-
-```
-src/i18n/
-├── index.ts           # i18n setup
-├── languages.ts       # Language metadata
-└── locales/
-    ├── en/translation.json  # English (source)
-    ├── de/, es/, fr/, ja/, ru/, zh/, ...
-    └── ...
+```text
+microphone -> VAD/resampling -> selected model backend -> accelerator -> transcription -> optional post-processing -> clipboard/paste
 ```
 
-For translation contribution guidelines, see [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md).
+key backend locations:
 
-## Code Style
+- `src-tauri/src/lib.rs`: Tauri setup, managed state, commands, and plugins
+- `src-tauri/src/managers/audio.rs`: device and recording management
+- `src-tauri/src/managers/model.rs`: model catalog, downloads, selection, and migration
+- `src-tauri/src/managers/model_bundle.rs`: verified multi-file bundle materialization
+- `src-tauri/src/managers/transcription.rs`: backend loading, ORT selection, diagnostics, and transcription
+- `src-tauri/src/settings.rs`: persisted settings and defaults
+- `src-tauri/src/shortcut/`: shortcut backends and runtime controls
+- `src-tauri/src/signal_handle.rs`: shared transcription command path
 
-**Rust:**
+key frontend locations:
 
-- Run `cargo fmt` and `cargo clippy` before committing
-- Handle errors explicitly (avoid unwrap in production)
-- Use descriptive names, add doc comments for public APIs
+- `src/App.tsx`: application root and onboarding
+- `src/components/model-selector/`: model selection/download UI
+- `src/components/settings/`: settings UI
+- `src/stores/`: Zustand state and Tauri command integration
+- `src/bindings.ts`: generated tauri-specta bindings; regenerate from the Rust command export path rather than hand-editing
+- `src/i18n/locales/en/translation.json`: source locale for user-facing strings
 
-**TypeScript/React:**
+## GigaAM catalog and bundle boundary
 
-- Strict TypeScript, avoid `any` types
-- Functional components with hooks
-- Tailwind CSS for styling
-- Path aliases: `@/` → `./src/`
+the four supported multilingual entries are registered in `src-tauri/src/managers/model.rs`:
 
-## CLI Parameters
+- `gigaam-multilingual-220m-int8` / `GigaAM Multilingual 220M INT8`
+- `gigaam-multilingual-220m-fp32-cuda` / `GigaAM Multilingual 220M FP32 CUDA`
+- `gigaam-multilingual-600m-int8` / `GigaAM Multilingual 600M INT8`
+- `gigaam-multilingual-600m-fp32-cuda` / `GigaAM Multilingual 600M FP32 CUDA`
 
-Handy supports command-line parameters on all platforms for integration with scripts, window managers, and autostart configurations.
+all four are `EngineType::GigaAM`, use `ModelSource::HuggingFaceBundle`, and support `uz`, `kk`, `ky`, `ru`, and `en`. they are non-streaming CTC models with automatic language detection and no manual language-selection contract. raw output has no punctuation or digit vocabulary.
 
-**Implementation:** `cli.rs` (definitions), `main.rs` (parsing), `lib.rs` (applying), `signal_handle.rs` (shared logic)
+the 220M files are pinned to `istupakov/gigaam-multilingual-ctc-onnx` revision `458860e1983aef670dd9795fb6af603c82767d5d`; 600M files are pinned to `istupakov/gigaam-multilingual-large-ctc-onnx` revision `07665ab5e54371dd1ac7b8b10f06478003723573`.
 
-| Flag                     | Description                                                |
-| ------------------------ | ---------------------------------------------------------- |
-| `--toggle-transcription` | Toggle recording on/off on a running instance              |
-| `--toggle-post-process`  | Toggle recording with post-processing on/off               |
-| `--cancel`               | Cancel the current operation on a running instance         |
-| `--start-hidden`         | Launch without showing the main window (tray icon visible) |
-| `--no-tray`              | Launch without system tray (closing window quits the app)  |
-| `--debug`                | Enable debug mode with verbose (Trace) logging             |
+each bundle declares every remote/local filename, expected byte count, and SHA256, including `multilingual_vocab.txt` materialized as `vocab.txt`. `model_bundle.rs` owns staging, cancellation cleanup, verification, and completed-bundle exposure. do not bypass it with a raw URL, trust an unpinned branch, silently substitute a file/model, or mark a partially materialized directory downloaded.
 
-**Key design decisions:**
+model weights are runtime downloads. they must never enter Git, installers, `src-tauri/resources`, or release source archives.
 
-- CLI flags are runtime-only overrides — they do NOT modify persisted settings
-- Remote control flags work via `tauri_plugin_single_instance`: second instance sends args, then exits
-- `send_transcription_input()` in `signal_handle.rs` is shared between signal handlers and CLI
+## CTC and inference boundary
 
-## Debug Mode
+GigaAM inference is ONNX CTC through `transcribe-rs`; model and vocabulary paths are supplied together. model download/catalog code must not implement decoding, and UI code must not infer bundle layout.
 
-Access debug features: `Cmd+Shift+D` (macOS) or `Ctrl+Shift+D` (Windows/Linux)
+Whisper-family GGML/GGUF models use `transcribe-cpp`. its native `Auto`/`CPU`/`GPU` backend and device selection are separate from ONNX Runtime. do not route Whisper through ORT or assume the ORT accelerator changes a `transcribe-cpp` model.
 
-## Platform Notes
+## ONNX Runtime accelerator boundary
 
-- **macOS**: Metal acceleration, accessibility permissions required for keyboard shortcuts
-- **Windows**: Vulkan acceleration, code signing
-- **Linux**: OpenBLAS + Vulkan, limited Wayland support, overlay uses GTK layer shell (disable with `HANDY_NO_GTK_LAYER_SHELL=1`)
+`OrtAcceleratorSetting` controls ONNX models such as GigaAM, Parakeet, Moonshine, SenseVoice, Canary, and Cohere.
 
-## Troubleshooting
+- `Auto` selects CUDA only when CUDA support is compiled into this Windows x64 build and provider registration succeeds; otherwise it selects CPU and preserves a diagnostic fallback reason.
+- `CPU` forces `transcribe_rs::OrtAccelerator::CpuOnly`.
+- explicit `CUDA` is strict. missing app-local DLLs, provider-registration failure, or missing/incompatible NVIDIA driver returns an error rather than silently using CPU.
+- the default/CPU build does not compile `ort-cuda`; the CUDA package builds with `--features ort-cuda` and stages its provider/runtime beside `GigaType.exe`.
 
-See the [Troubleshooting](README.md#troubleshooting) section in README.md.
+accelerator preference is applied before model load. changing it requires the model to reload on next use. preserve process-only CLI override semantics and the `--list-accelerators --json` diagnostics contract.
 
-## GitHub workflow for AI coding assistants
+## Windows package boundary
 
-**MANDATORY. Before opening any PR, issue, or discussion in this repo: you MUST read the relevant template file and follow it strictly.** That includes sections that look "ceremonial" — checklists, AI Assistance disclosures, "Human Written Description". A generic Summary/Test-plan layout is not acceptable.
+`scripts/build-windows-cuda.ps1` derives product/version/executable names from `src-tauri/tauri.conf.json`; do not reintroduce hardcoded upstream artifact names.
 
-- **Opening a PR:** Read [`.github/PULL_REQUEST_TEMPLATE.md`](.github/PULL_REQUEST_TEMPLATE.md). Every section listed there is mandatory. If a section requires a human-written paragraph (e.g. "Human Written Description"), leave a clear TODO placeholder and ask the human contributor to fill it in — do not invent their voice.
-- **Opening an issue:** Read [`.github/ISSUE_TEMPLATE/`](.github/ISSUE_TEMPLATE/). Blank issues are disabled; pick the right template (`bug_report.md` for bugs). Feature requests do not belong in issues — they go to [Discussions](https://github.com/cjpais/Handy/discussions) (see `.github/ISSUE_TEMPLATE/config.yml`).
-- **Proposing a feature:** Handy is under a feature freeze. New features require community support gathered in [Discussions](https://github.com/cjpais/Handy/discussions) before any PR is opened — see the PR template's "Community Feedback" section.
-- **Translations:** Follow [CONTRIBUTING_TRANSLATIONS.md](CONTRIBUTING_TRANSLATIONS.md).
-- **Full contributor workflow:** [CONTRIBUTING.md](CONTRIBUTING.md).
+CPU and CUDA packages share application code but not native runtime inventory:
 
-**Commits:** Use conventional commit prefixes (`feat:`, `fix:`, `docs:`, `refactor:`, `chore:`). Focus the message on _why_, not _what_.
+- CPU packages stage CPU ONNX Runtime, reject CUDA/NVIDIA files, include ONNX Runtime license/notices, and launch packaged device diagnostics.
+- CUDA packages stage pinned ONNX Runtime CUDA 13, CUDA 13.0 Update 2 components, and cuDNN 9.16.0.29; require their licenses/notices, zero unresolved PE imports, usable explicit CUDA diagnostics, transcript parity/timing gates, and exact-PID VRAM proof.
+- neither edition contains model weights.
+- both editions are unsigned. upstream signing/updater configuration must remain absent; release consumers verify SHA256 from private release notes.
+
+package caches and `dist/` are generated state. never commit installers, extracted runtimes, model files, caches, benchmark evidence, or credentials.
+
+## Commands and process control
+
+supported CLI flags include:
+
+- `--toggle-transcription`, `--toggle-post-process`, and `--cancel` for the running single instance
+- `--start-hidden`, `--no-tray`, and `--debug`
+- `--list-devices`, `--list-accelerators`, `--device-index`, `--ort-accelerator`, `--transcribe-file`, `--model`, `--repeat`, and `--json` for diagnostics/verification
+
+runtime-only flags do not modify persisted settings. remote-control flags are delivered through `tauri_plugin_single_instance` and the second process exits.
+
+before starting a development server, inspect port `1420` and existing Tauri/Vite processes. identify the exact PID before stopping any process.
+
+## Internationalization and generated files
+
+all user-facing JSX strings use i18next. add or change English keys in `src/i18n/locales/en/translation.json`, update every locale, then run:
+
+```powershell
+bun run check:translations
+bun run lint
+```
+
+do not hand-edit generated icon mirrors or `src/bindings.ts` without following their source-of-truth generation path. verify generated changes before committing.
+
+## Code style and validation
+
+Rust code uses explicit errors in production paths, scoped expected-error handling, and no silent dependency/model fallback. TypeScript remains strict and avoids `any`. preserve dirty worktrees and change only task-owned files.
+
+before commit, run the narrow tests for changed behavior plus relevant format/lint/type/Rust checks. use `git diff --check` and inspect the staged allowlist. distinguish source checks, local package proof, and deployed/release proof in every handoff.
+
+## Licensing and attribution
+
+preserve root MIT text and `Copyright (c) 2025 CJ Pais`. keep the unofficial-fork and no-upstream-endorsement notice in friend-facing documentation. model weights retain their model-repository terms and are not relicensed by the source MIT license.
+
+Windows package code must continue staging ONNX Runtime license/notices. CUDA packages must also stage official CUDA/cuDNN license files and `src-tauri/resources/licenses/THIRD_PARTY_NOTICES-CUDA.txt`.
+
+## GitHub workflow
+
+before opening a PR, issue, or discussion, read and follow the relevant `.github` template. conventional commit prefixes are required. never add `Co-authored-by: Claude Code`.

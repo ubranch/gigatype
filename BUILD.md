@@ -1,280 +1,230 @@
-# Build Instructions
+# Building GigaType
 
-This guide covers how to set up the development environment and build Handy from source across different platforms.
+this guide covers source development on Windows, macOS, and Linux, plus the release-gated Windows x64 CPU and NVIDIA CUDA 13 packages for version `0.9.3-gigatype.1`.
 
-## Prerequisites
+Windows x64 is the only packaged release target. macOS and Linux remain supported source-development targets, but this release does not claim rebuilt or verified packages for them.
 
-### All Platforms
+## Clone and version
 
-- [Rust](https://rustup.rs/) (latest stable)
-- [Bun](https://bun.sh/) package manager
-- [Tauri Prerequisites](https://tauri.app/start/prerequisites/)
+```powershell
+git clone https://github.com/ubranch/GigaType.git
+cd GigaType
+```
 
-### Platform-Specific Requirements
+the package, Cargo, and Tauri versions must all remain `0.9.3-gigatype.1`. `src-tauri/tauri.conf.json` is the package scripts' source of truth for `productName`, version, executable name, and artifact names.
 
-#### macOS
+## Cross-platform prerequisites
 
-- Xcode Command Line Tools
-- Install with: `xcode-select --install`
+all platforms need:
 
-##### Intel Mac (x86_64)
+- [Git](https://git-scm.com/)
+- current stable [Rust](https://rustup.rs/)
+- [Bun](https://bun.sh/)
+- the official [Tauri 2 prerequisites](https://tauri.app/start/prerequisites/)
 
-Prebuilt ONNX Runtime binaries are not available for Intel Macs. Install ONNX Runtime via Homebrew and link dynamically:
+install JavaScript dependencies once from the repository root:
+
+```powershell
+bun install
+```
+
+### Windows source prerequisites
+
+- Windows x64 and PowerShell 7
+- Visual Studio 2019/2022 or Visual Studio Build Tools with Desktop development with C++, the x64 MSVC toolchain, Windows SDK, and VC++ redistributable files
+- [CMake](https://cmake.org/download/) on `PATH`
+- [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) with `VULKAN_SDK` available in a new terminal
+- SPIR-V headers discoverable through `CMAKE_PREFIX_PATH`; the build script also recognizes `%LOCALAPPDATA%\handy-vcpkg\manifest\vcpkg_installed\x64-windows`
+
+common installers:
+
+```powershell
+winget install Kitware.CMake
+winget install KhronosGroup.VulkanSDK
+```
+
+the CUDA release verifier additionally requires `ffmpeg.exe`, `ffprobe.exe`, and `nvidia-smi.exe` on `PATH`. `nvidia-smi.exe` is supplied by the NVIDIA display driver. CUDA Toolkit developer tools are not required because the script stages pinned redistributable runtime archives.
+
+### macOS source prerequisites
+
+install Xcode Command Line Tools:
+
+```bash
+xcode-select --install
+```
+
+Intel macOS has no prebuilt ONNX Runtime input in this project. install ONNX Runtime with Homebrew and use dynamic linking:
 
 ```bash
 brew install onnxruntime
 ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun run tauri dev
-```
-
-The same environment variables apply for production builds:
-
-```bash
 ORT_LIB_LOCATION=$(brew --prefix onnxruntime)/lib ORT_PREFER_DYNAMIC_LINK=1 bun run tauri build
 ```
 
-#### Windows
+### Linux source prerequisites
 
-- Microsoft C++ Build Tools: Visual Studio 2019/2022 with C++ development
-  tools, or Visual Studio Build Tools 2019/2022
-- [CMake](https://cmake.org/download/) (must be on `PATH`):
+install the Tauri, audio, Vulkan, and layer-shell development packages for the distribution:
 
-  ```powershell
-  winget install Kitware.CMake
-  ```
+```bash
+# Ubuntu/Debian
+sudo apt update
+sudo apt install build-essential libasound2-dev pkg-config libssl-dev libvulkan-dev vulkan-tools glslc spirv-headers glslang-tools libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-layer-shell0 libgtk-layer-shell-dev patchelf cmake
 
-- [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) from LunarG — required to
-  build the Vulkan GPU backend (`vulkan-shaders-gen` needs the SDK's headers
-  and `glslc`):
+# Fedora/RHEL
+sudo dnf groupinstall "Development Tools"
+sudo dnf install alsa-lib-devel pkgconf openssl-devel vulkan-devel \
+  spirv-headers-devel spirv-tools-devel glslang glslc \
+  gtk3-devel webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel \
+  gtk-layer-shell gtk-layer-shell-devel cmake
 
-  ```powershell
-  winget install KhronosGroup.VulkanSDK
-  ```
+# Arch Linux
+sudo pacman -S base-devel alsa-lib pkgconf openssl vulkan-devel \
+  spirv-headers glslang shaderc gtk3 webkit2gtk-4.1 \
+  libappindicator-gtk3 librsvg gtk-layer-shell cmake
+```
 
-  Open a new terminal afterward so `VULKAN_SDK` is set.
-
-> [!NOTE]
-> Windows' 260-character path limit used to break the native Vulkan build in
-> most checkouts. Since `transcribe-cpp` 0.1.3 the build works around it
-> automatically (it compiles through a short NTFS junction — no admin rights
-> or setup needed), so a normal checkout just builds. If you still hit
-> path-limit errors, see
-> [Windows build fails with path-limit errors](#windows-build-fails-with-path-limit-errors-msb3491--ftk1011--msb6003)
-> in Troubleshooting.
-
-##### Windows x64 NVIDIA CUDA 13 edition
-
-The normal Windows build remains the small CPU/Vulkan edition. Build the separate
-NVIDIA CUDA 13 edition from PowerShell 7 at the repository root:
+## Source development
 
 ```powershell
-pwsh -File .\scripts\build-windows-cuda.ps1 -Mode All
-```
-
-The script produces unsigned, local artifacts in `dist\windows-cuda`:
-
-- `Handy_0.9.3_x64-cuda13-setup.exe` (NSIS, approximately 1.1 GB)
-- `Handy_0.9.3_x64-cuda13_en-US.msi` (approximately 1.25 GB)
-
-The CUDA suffix is intentional: these installers target Windows x64, NVIDIA
-drivers, and CUDA 13. They carry the app-local ONNX Runtime 1.24.2 CUDA 13
-provider, NVIDIA CUDA 13.0 Update 2 runtime components, and cuDNN 9.16.0.29.
-Inputs come from the official immutable release/archive URLs below; the build
-script pins versions, archive sizes, and SHA256 values and audits the extracted
-PE dependency closure before accepting either installer.
-
-- `https://github.com/microsoft/onnxruntime/releases/download/v1.24.2/onnxruntime-win-x64-gpu_cuda13-1.24.2.zip`
-- `https://developer.download.nvidia.com/compute/cuda/redist/redistrib_13.0.2.json`
-- `https://developer.download.nvidia.com/compute/cudnn/redist/redistrib_9.16.0.json`
-
-Model weights are downloaded separately and are never bundled in either
-installer. `Auto` uses CUDA only when provider registration succeeds, then
-falls back to CPU with a diagnostic reason; explicit `CUDA` fails non-zero when
-a required app-local runtime component or compatible NVIDIA driver is missing.
-Use the normal `bun run tauri build` artifacts for systems that do not need the
-larger CUDA runtime.
-
-#### Linux
-
-- Build essentials
-- ALSA development libraries
-- Install with:
-
-  ```bash
-  # Ubuntu/Debian
-  sudo apt update
-  sudo apt install build-essential libasound2-dev pkg-config libssl-dev libvulkan-dev vulkan-tools glslc spirv-headers glslang-tools libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libgtk-layer-shell0 libgtk-layer-shell-dev patchelf cmake
-
-  # Fedora/RHEL
-  sudo dnf groupinstall "Development Tools"
-  sudo dnf install alsa-lib-devel pkgconf openssl-devel vulkan-devel \
-    spirv-headers-devel spirv-tools-devel glslang glslc \
-    gtk3-devel webkit2gtk4.1-devel libappindicator-gtk3-devel librsvg2-devel \
-    gtk-layer-shell gtk-layer-shell-devel \
-    cmake
-
-  # Arch Linux
-  sudo pacman -S base-devel alsa-lib pkgconf openssl vulkan-devel \
-    spirv-headers glslang shaderc \
-    gtk3 webkit2gtk-4.1 libappindicator-gtk3 librsvg gtk-layer-shell \
-    cmake
-  ```
-
-## Setup Instructions
-
-### 1. Clone the Repository
-
-```bash
-git clone git@github.com:cjpais/Handy.git
-cd Handy
-```
-
-### 2. Install Dependencies
-
-```bash
-bun install
-```
-
-### 3. Start Dev Server
-
-```bash
-bun tauri dev
-```
-
-### 4. Build for Production
-
-```bash
-bun run tauri build
-```
-
-This compiles a release binary and generates platform-specific bundles (deb, rpm, AppImage on Linux; dmg on macOS; msi on Windows).
-
-## Linux Install (from source)
-
-The raw binary (`src-tauri/target/release/handy`) cannot run standalone — it needs Tauri resource files (tray icons, sounds, VAD model) to be co-located at the expected path.
-
-**Install from the deb bundle** (works on any Linux distro):
-
-```bash
-cd /tmp
-ar x /path/to/Handy/src-tauri/target/release/bundle/deb/Handy_*_amd64.deb data.tar.gz
-tar xzf data.tar.gz
-sudo cp usr/bin/handy /usr/bin/
-sudo cp -a usr/lib/. /usr/lib/
-sudo cp -r usr/share/icons/hicolor/* /usr/share/icons/hicolor/
-sudo cp usr/share/applications/Handy.desktop /usr/share/applications/
-sudo ldconfig
-```
-
-After subsequent rebuilds, copy the binary and any refreshed runtime libraries:
-
-```bash
-sudo cp src-tauri/target/release/handy /usr/bin/
-sudo cp -a src-tauri/transcribe-libs/. /usr/lib/
-sudo ldconfig
-```
-
-Resources only need re-copying if they change upstream (new icons, sounds, models, etc.).
-
-## Troubleshooting
-
-### AppImage build fails on Arch / rolling-release distros
-
-`linuxdeploy` bundles its own `strip` binary which is too old to process system libraries built with newer toolchains on rolling-release distros (Arch, CachyOS, Manjaro, EndeavourOS).
-
-The error from Tauri:
-
-```
-Bundling Handy_*_amd64.AppImage
-failed to bundle project `failed to run linuxdeploy`
-```
-
-Tauri swallows the real linuxdeploy error. To see it, run linuxdeploy manually:
-
-```bash
-cd src-tauri/target/release/bundle/appimage
-~/.cache/tauri/linuxdeploy-x86_64.AppImage --appimage-extract-and-run \
-  --appdir Handy.AppDir --plugin gtk --output appimage
-```
-
-**Workaround:** The binary, deb, and rpm bundles all build fine — only the AppImage step fails. To skip it:
-
-```bash
-bun run tauri build -- --bundles deb
-```
-
-Then install using the deb extraction method above.
-
-### Windows build fails with path-limit errors (`MSB3491` / `FTK1011` / `MSB6003`)
-
-On Windows the native build can fail partway through `transcribe-cpp-sys` with
-any of these (all the same root cause):
-
-```
-error MSB3491: Could not write lines to file "...VCTargetsPath.tlog\VCTargetsPath.lastbuildstate".
-Path: ... exceeds the OS max path limit. The fully qualified file name must be less than 260 characters.
-```
-
-```
-FileTracker : error FTK1011: could not create the new file tracking log file:
-...\vulkan-shaders-gen-build\...\cmTC_xxxxx.tlog\link.write.1.tlog.
-The system cannot find the path specified.
-```
-
-```
-error MSB6003: The specified task executable "CL.exe" could not be run.
-System.IO.DirectoryNotFoundException: Could not find a part of the path ...
-```
-
-This is **not** a code or toolchain problem — it's Windows' legacy 260-character
-path limit (`MAX_PATH`), overflowed by the Vulkan shader generator's nested
-CMake build tree on top of Cargo's already-deep
-`target\release\build\<crate>-<hash>\out\build\...` directory.
-
-Since `transcribe-cpp` 0.1.3 this is mitigated automatically: the native build
-compiles through a short NTFS junction under `%LOCALAPPDATA%\tcs` (created
-without admin rights), so a normal checkout builds with no setup. Enabling
-Windows long paths does **not** reliably help here — MSBuild's native
-`FileTracker` (`tracker.exe`) ignores the long-paths flag — which is why the
-junction, not the registry flag, is the fix.
-
-If you still see the errors above, junction creation was likely blocked
-(filesystem or corporate policy) — the failing build's log then contains a
-`transcribe-cpp-sys: could not create short build junction ...` warning — or
-your checkout is deep enough to overflow even the shortened layout. Work
-around either case with a short Cargo target directory:
-
-```powershell
-# Per-shell:
-$env:CARGO_TARGET_DIR = "C:\h"
-
-# Or persist it for all future terminals (note: redirects ALL your
-# Rust projects' build output, not just Handy):
-[Environment]::SetEnvironmentVariable('CARGO_TARGET_DIR', 'C:\h', 'User')
-```
-
-Artifacts then land in `C:\h\release\...` instead of the repo's
-`src-tauri\target\`. Open a **new terminal** if you persisted the variable —
-it is only picked up by freshly started processes. Then `bun run tauri dev`
-and `bun run tauri build` work normally.
-
-### Windows `tauri build` fails at bundling with `program not found`
-
-If the build compiles all the way to `Built application at: ...\handy.exe` and
-then fails with:
-
-```
-Signing C:\...\handy.exe with a custom signing command
-failed to bundle project `program not found`
-```
-
-that's the code-signing step: `tauri.conf.json` configures a custom
-`signCommand` (`trusted-signing-cli`, Azure Trusted Signing) that only exists
-in the release CI environment. Local development doesn't need it:
-
-```powershell
-# Development (no bundling/signing at all):
 bun run tauri dev
-
-# Or compile a release binary without the installer/signing step:
-bun run tauri build --no-bundle
 ```
+
+source checks used before packaging:
+
+```powershell
+bun test tests/model-source.test.ts tests/dropdown-accessibility.test.tsx tests/gigatype-branding.test.ts
+bun run check:translations
+bun run build
+bun run lint
+bun run format:check
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+```
+
+`bun run tauri build` remains the generic current-platform source build. it does not by itself satisfy this fork's Windows release audit.
+
+## Windows x64 release commands
+
+run these from a PowerShell 7 prompt at `GigaType` repository root:
+
+```powershell
+bun install
+& ./scripts/test-build-windows-cuda.ps1
+& ./scripts/test-verify-windows-cuda.ps1
+& ./scripts/build-windows-cuda.ps1 -Mode All -Edition Cpu
+& ./scripts/verify-windows-cuda.ps1 -Mode All -Repeat 3
+```
+
+the two `test-*` commands are fast contract tests for parsing, pins, naming, path ownership, package-audit rules, and failure behavior. they do not compile or benchmark the application. the CPU `-Mode All` command prepares pinned CPU ONNX Runtime, builds both installers, audits both package formats, and launches packaged diagnostics. the CUDA verifier's `-Mode All` command prepares/builds/audits CUDA installers before running provider, transcript, timing, and VRAM gates.
+
+inspect immutable inputs and names without downloading or building:
+
+```powershell
+& ./scripts/build-windows-cuda.ps1 -Mode Plan -Edition Cpu -Json
+& ./scripts/build-windows-cuda.ps1 -Mode Plan -Edition Cuda -Json
+& ./scripts/verify-windows-cuda.ps1 -Mode Plan -Json
+```
+
+`Plan` output is configuration evidence only. it is not package or runtime proof.
+
+## Exact release outputs
+
+a successful CPU build writes:
+
+- `dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64-setup.exe`
+- `dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64_en-US.msi`
+
+a successful CUDA verification build writes:
+
+- `dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe`
+- `dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi`
+
+CUDA evidence is written under `dist/windows-cuda/verification/`, including artifact hashes, package audits, launch results, missing-provider proof, fixture metadata, benchmarks, and exact-PID VRAM evidence. `dist/`, installers, downloaded models, and caches are generated artifacts and must not be committed.
+
+## Pinned package and model inputs
+
+`scripts/build-windows-cuda.ps1` pins official inputs by immutable name/version and SHA256:
+
+- CPU ONNX Runtime `onnxruntime-win-x64-1.24.2.zip`
+- CUDA ONNX Runtime `onnxruntime-win-x64-gpu_cuda13-1.24.2.zip`
+- NVIDIA CUDA redistributable manifest `redistrib_13.0.2.json`, with `cuda_cudart`, `cuda_nvrtc`, `libcublas`, `libcufft`, and `libnvjitlink`
+- NVIDIA cuDNN `9.16.0.29` from `redistrib_9.16.0.json`
+
+the GigaAM catalog and verifier pin model files by repository revision, byte count, and SHA256:
+
+- `istupakov/gigaam-multilingual-ctc-onnx` at `458860e1983aef670dd9795fb6af603c82767d5d`
+- `istupakov/gigaam-multilingual-large-ctc-onnx` at `07665ab5e54371dd1ac7b8b10f06478003723573`
+
+model weights are downloaded separately and are rejected if size or SHA256 differs. no installer may contain model weight files.
+
+## Caches and generated state
+
+- `%LOCALAPPDATA%\gigatype-cuda-build` stores verified archives, extracted inputs, staged CPU/CUDA runtime trees, generated Tauri configs, command wrappers, and edition-specific Cargo target directories.
+- `%LOCALAPPDATA%\gigatype-cuda-verify` stores the deterministic fixture, model blobs keyed by SHA256, temporary package work trees, process logs, and verification state.
+- `dist/windows-cpu` and `dist/windows-cuda` contain final local packages; `dist/windows-cuda/verification` contains durable JSON evidence from the verifier.
+- package-audit extraction uses uniquely named `%TEMP%\gigatype-audit-*` directories and removes only paths matching that owned prefix.
+
+cache hits are accepted only after the script's expected size/SHA256 checks. deleting these caches forces downloads and rebuild work; it is not required for a normal repeat run.
+
+## Package audit contract
+
+both NSIS and MSI are extracted independently: NSIS uses silent portable extraction and MSI uses an administrative install. each extracted package must:
+
+- contain `GigaType.exe` and all staged runtime DLLs
+- contain no model weights
+- contain ONNX Runtime license and third-party-notice files
+- have zero unresolved non-system PE imports according to `dumpbin.exe`
+- launch packaged `GigaType.exe --list-devices` successfully
+
+CUDA packages must also contain the CUDA execution provider, required CUDA/cuDNN runtime DLLs, `THIRD_PARTY_NOTICES-CUDA.txt`, and each staged NVIDIA license. packaged `GigaType.exe --list-accelerators --json --ort-accelerator cuda` must succeed.
+
+CPU packages must contain no CUDA provider/runtime DLL or NVIDIA CUDA/cuDNN notice/license metadata. this negative inventory gate is what keeps the CPU release small and provider-independent.
+
+## CUDA negative-provider gate
+
+the verifier creates an owned temporary hard-linked copy of an extracted CUDA package, deliberately withholds `onnxruntime_providers_cuda.dll`, and launches explicit CUDA diagnostics. acceptance requires non-zero exit plus a diagnostic naming the missing app-local provider. the test never mutates the original extracted package or installer.
+
+## FLEURS, WER, timing, and VRAM proof
+
+the CUDA verifier uses `google/fleurs`, config `uz_uz`, validation row `72`. it pins the source transcription and raw-audio SHA256, normalizes audio to a 13.56-second, 16 kHz, mono, 16-bit PCM WAV with `ffmpeg`, and verifies the decoded PCM SHA256. `-FixtureManifest` may reuse an existing matching `uz_uz` fixture, but it must pass the same reference and PCM checks.
+
+for both `gigaam-multilingual-220m-fp32-cuda` and `gigaam-multilingual-600m-fp32-cuda`, the verifier runs the same packaged model/audio on CPU and CUDA at least three times. it requires:
+
+- non-empty text and the explicitly requested ORT accelerator with no fallback
+- reference WER at or below `0.50`
+- CUDA WER regression versus CPU at or below `0.02`
+- CUDA best transcription time below CPU best transcription time
+- recorded load time, every transcription time, best time, audio duration, real-time factor, transcript, normalized text, WER, and provider log
+
+for the 600M CUDA model, the verifier launches a dedicated measured process and samples GPU memory while that exact PID is alive. it accepts either `nvidia-smi` compute-process memory or the Windows GPU Process Memory/Dedicated Usage counter when WDDM reports `N/A`, but requires non-zero VRAM attributed to the exact `GigaType.exe` PID. total GPU utilization or another process is not proof.
+
+these gates prove the specific locally built artifacts, machine, driver, and pinned fixture used by the command. they do not establish a universal performance number or prove a separately uploaded release asset.
+
+## Release SHA256
+
+compute hashes only after every package gate passes and no further rebuild is planned:
+
+```powershell
+$assets = @(
+  "dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64-setup.exe",
+  "dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64_en-US.msi",
+  "dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe",
+  "dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi"
+)
+$assets | ForEach-Object {
+  $file = Get-Item -LiteralPath $_
+  $hash = Get-FileHash -LiteralPath $_ -Algorithm SHA256
+  [pscustomobject]@{
+    Name = $file.Name
+    Bytes = $file.Length
+    SHA256 = $hash.Hash.ToLowerInvariant()
+  }
+} | Format-Table -AutoSize
+```
+
+publish these final hashes beside the exact filenames in the private release notes. rebuilding any asset invalidates its previous hash and all upload comparisons.
+
+## License staging
+
+the source is MIT-licensed under the preserved root `LICENSE`. model weights remain under the terms published by their model repositories and are not part of source or installers. CPU packages stage ONNX Runtime `LICENSE` and `ThirdPartyNotices.txt`; CUDA packages additionally stage official CUDA and cuDNN license files plus `src-tauri/resources/licenses/THIRD_PARTY_NOTICES-CUDA.txt`.
