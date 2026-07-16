@@ -32,6 +32,7 @@ export const Dropdown: React.FC<DropdownProps> = ({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const optionRefs = useRef(new Map<string, HTMLButtonElement>());
   const menuId = useId();
 
   useEffect(() => {
@@ -51,6 +52,26 @@ export const Dropdown: React.FC<DropdownProps> = ({
     (option) => option.value === selectedValue,
   );
 
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const enabledOptions = options
+      .filter((option) => !option.disabled)
+      .map((option) => optionRefs.current.get(option.value))
+      .filter((option): option is HTMLButtonElement => option !== undefined);
+    if (enabledOptions.includes(document.activeElement as HTMLButtonElement)) {
+      return;
+    }
+
+    const selectedEnabledOption = options.find(
+      (option) => option.value === selectedValue && !option.disabled,
+    );
+    const optionToFocus = selectedEnabledOption
+      ? optionRefs.current.get(selectedEnabledOption.value)
+      : enabledOptions[0];
+    optionToFocus?.focus();
+  }, [isOpen, options, selectedValue]);
+
   const handleSelect = (value: string) => {
     onSelect(value);
     setIsOpen(false);
@@ -67,7 +88,35 @@ export const Dropdown: React.FC<DropdownProps> = ({
       event.preventDefault();
       setIsOpen(false);
       triggerRef.current?.focus();
+      return;
     }
+
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      return;
+    }
+
+    event.preventDefault();
+    const enabledOptions = options
+      .filter((option) => !option.disabled)
+      .map((option) => optionRefs.current.get(option.value))
+      .filter((option): option is HTMLButtonElement => option !== undefined);
+    if (enabledOptions.length === 0) return;
+
+    const currentIndex = enabledOptions.indexOf(
+      document.activeElement as HTMLButtonElement,
+    );
+    let nextIndex: number;
+    if (event.key === "Home") {
+      nextIndex = 0;
+    } else if (event.key === "End") {
+      nextIndex = enabledOptions.length - 1;
+    } else if (event.key === "ArrowDown") {
+      nextIndex = (currentIndex + 1) % enabledOptions.length;
+    } else {
+      nextIndex =
+        (currentIndex - 1 + enabledOptions.length) % enabledOptions.length;
+    }
+    enabledOptions[nextIndex]?.focus();
   };
 
   return (
@@ -119,6 +168,13 @@ export const Dropdown: React.FC<DropdownProps> = ({
             options.map((option) => (
               <button
                 key={option.value}
+                ref={(element) => {
+                  if (element) {
+                    optionRefs.current.set(option.value, element);
+                  } else {
+                    optionRefs.current.delete(option.value);
+                  }
+                }}
                 type="button"
                 role="option"
                 aria-selected={selectedValue === option.value}
