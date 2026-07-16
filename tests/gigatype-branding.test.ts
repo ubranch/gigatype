@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -44,5 +45,31 @@ describe("GigaType branding contract", () => {
     expect(defaultCapability).not.toContain("updater:");
     expect(desktopCapability).not.toContain("updater:");
     expect(existsSync(join(root, "src/components/update-checker"))).toBe(false);
+  });
+
+  test("keeps generated Nix dependencies free of the updater", () => {
+    expect(read(".nix/bun.nix")).not.toContain("@tauri-apps/plugin-updater");
+  });
+
+  test("tracks the current bun.lock hash for Nix dependency generation", () => {
+    const bunLockHash = createHash("sha256")
+      .update(readFileSync(join(root, "bun.lock")))
+      .digest("hex");
+
+    expect(read(".nix/bun-lock-hash").trim()).toBe(bunLockHash);
+  });
+
+  test("launches the GigaType executable from Home Manager", () => {
+    const homeManagerModule = read("nix/hm-module.nix");
+
+    expect(homeManagerModule).toContain(
+      'ExecStart = "${cfg.package}/bin/GigaType";',
+    );
+  });
+
+  test("declares the GigaType executable as the flake main program", () => {
+    const flake = read("flake.nix");
+
+    expect(flake).toContain('mainProgram = "GigaType";');
   });
 });
