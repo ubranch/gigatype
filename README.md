@@ -35,14 +35,14 @@ when published, the four assets will be distributed with the private GigaType re
 2. verify the local file with the command in [Verify SHA256](#verify-sha256). stop if the values differ.
 3. run the `.exe` setup or `.msi`; do not install both formats.
 4. installers published by this private fork are unsigned, so Windows may show an unknown-publisher or Microsoft Defender SmartScreen warning. only after the SHA256 matches, select `More info -> Run anyway` when that option is shown.
-5. launch GigaType. on the Windows onboarding microphone card, select `Open Settings`. in `Settings -> Privacy & security -> Microphone`, enable `Microphone access` and `Let desktop apps access your microphone`, then return to GigaType. repeat this settings step until onboarding shows the permission as granted.
+5. launch GigaType. on the Windows onboarding microphone card, select `Open System Settings`. in `Settings -> Privacy & security -> Microphone`, enable `Microphone access` and `Let desktop apps access your microphone`, then return to GigaType. repeat this settings step until onboarding shows the permission as granted.
 
 GigaType has no automatic updater. verify and install a newer private package manually when one is published.
 
 ## First transcription
 
 1. open GigaType and complete the Windows microphone onboarding described above.
-2. in onboarding or the model selector, click `Show all models` before choosing a GigaAM entry; GigaAM models are not shown among the recommended cards.
+2. during onboarding, click `Show all models` before choosing a GigaAM entry; GigaAM models are not shown among the recommended cards. after onboarding, open `Settings -> Models`, where available models are listed directly without a `Show all models` control.
 3. download and select `GigaAM Multilingual 220M INT8` on CPU, or the matching GPU recommendation below. wait until the model is marked downloaded.
 4. `Auto` is the default ONNX Runtime accelerator. to inspect or change it, open `Settings -> Advanced`, enable `Experimental Features`, then under `Experimental` use `ONNX Acceleration`. choose `CPU` or `CUDA` explicitly only when needed for the selected edition or diagnostics.
 5. the default Windows transcription shortcut is `Ctrl+Space`, with push-to-talk enabled. configure either setting if that workflow is not convenient.
