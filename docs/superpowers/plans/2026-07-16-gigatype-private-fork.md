@@ -38,9 +38,11 @@
 ### Task 1: Commit the approved GigaAM/CUDA baseline
 
 **Files:**
+
 - Commit: every currently modified or untracked implementation file shown by `git status --short`, excluding the already committed design and this implementation plan.
 
 **Interfaces:**
+
 - Consumes: existing GigaAM model catalog IDs, `ModelSource::HuggingFaceBundle`, ONNX accelerator settings, and Windows package scripts already present in the working tree.
 - Produces: one buildable baseline commit before branding changes, preserving all user-approved work.
 
@@ -104,11 +106,13 @@ Expected: commit succeeds and `git status --short` is empty.
 ### Task 2: Establish GigaType package identity and remove updater coupling
 
 **Files:**
+
 - Create: `tests/gigatype-branding.test.ts`
 - Modify: `package.json`, `bun.lock`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, `src-tauri/tauri.conf.json`, `src-tauri/src/main.rs`, `src-tauri/src/cli.rs`, `src-tauri/src/lib.rs`, `src-tauri/src/tray.rs`, `src-tauri/src/portable.rs`, `src-tauri/src/settings.rs`, `src-tauri/src/shortcut/mod.rs`, `src-tauri/capabilities/default.json`, `src-tauri/capabilities/desktop.json`, `src-tauri/nsis/installer.nsi`, `src/bindings.ts`, `src/stores/settingsStore.ts`, `src/components/footer/Footer.tsx`, `src/components/settings/debug/DebugSettings.tsx`, `src/components/settings/index.ts`
 - Delete: `src/components/settings/UpdateChecksToggle.tsx`, `src/components/update-checker/UpdateChecker.tsx`, `src/components/update-checker/index.ts`
 
 **Interfaces:**
+
 - Consumes: Tauri product/bundle configuration and tauri-specta command export.
 - Produces: package `gigatype`, binary `GigaType.exe`, library crate `gigatype_app_lib`, CLI command `gigatype`, independent app-data identity, and no callable updater path.
 
@@ -263,11 +267,13 @@ Expected: tests/build pass; commit records renames, deletions, generated locks, 
 ### Task 3: Replace upstream visual and user-facing branding
 
 **Files:**
+
 - Create: `src/components/icons/GigaTypeMark.tsx`, `src/components/icons/GigaTypeLogo.tsx`, `src-tauri/icons/gigatype.svg`
 - Modify: `src/components/Sidebar.tsx`, `src/components/onboarding/Onboarding.tsx`, `src/components/onboarding/AccessibilityOnboarding.tsx`, `src/components/settings/about/AboutSettings.tsx`, `src/components/settings/debug/KeyboardImplementationSelector.tsx`, `src/i18n/locales/*/translation.json`, `src/content/release-notes/0.9.0.md`, `src-tauri/src/llm_client.rs`, `src-tauri/src/settings.rs`, `src-tauri/icons/**`, `tests/gigatype-branding.test.ts`
 - Delete: `src/components/icons/HandyHand.tsx`, `src/components/icons/HandyTextLogo.tsx`
 
 **Interfaces:**
+
 - Consumes: existing `--color-logo-primary` and `--color-logo-stroke` theme variables.
 - Produces: original GigaType desktop icon, reusable `GigaTypeMark`/`GigaTypeLogo`, and GigaType copy in every locale.
 
@@ -276,21 +282,29 @@ Expected: tests/build pass; commit records renames, deletions, generated locks, 
 Add this test to `tests/gigatype-branding.test.ts`:
 
 ```typescript
-  test("uses independent user-facing visuals and links", () => {
-    const sidebar = read("src/components/Sidebar.tsx");
-    const about = read("src/components/settings/about/AboutSettings.tsx");
-    const headers = read("src-tauri/src/llm_client.rs");
+test("uses independent user-facing visuals and links", () => {
+  const sidebar = read("src/components/Sidebar.tsx");
+  const about = read("src/components/settings/about/AboutSettings.tsx");
+  const headers = read("src-tauri/src/llm_client.rs");
 
-    expect(existsSync(join(root, "src/components/icons/GigaTypeMark.tsx"))).toBe(true);
-    expect(existsSync(join(root, "src/components/icons/GigaTypeLogo.tsx"))).toBe(true);
-    expect(existsSync(join(root, "src/components/icons/HandyHand.tsx"))).toBe(false);
-    expect(existsSync(join(root, "src/components/icons/HandyTextLogo.tsx"))).toBe(false);
-    expect(sidebar).toContain("GigaTypeLogo");
-    expect(sidebar).toContain("GigaTypeMark");
-    expect(about).toContain("https://github.com/ubranch/GigaType");
-    expect(about).not.toContain("handy.computer/donate");
-    expect(headers).toContain("https://github.com/ubranch/GigaType");
-  });
+  expect(existsSync(join(root, "src/components/icons/GigaTypeMark.tsx"))).toBe(
+    true,
+  );
+  expect(existsSync(join(root, "src/components/icons/GigaTypeLogo.tsx"))).toBe(
+    true,
+  );
+  expect(existsSync(join(root, "src/components/icons/HandyHand.tsx"))).toBe(
+    false,
+  );
+  expect(existsSync(join(root, "src/components/icons/HandyTextLogo.tsx"))).toBe(
+    false,
+  );
+  expect(sidebar).toContain("GigaTypeLogo");
+  expect(sidebar).toContain("GigaTypeMark");
+  expect(about).toContain("https://github.com/ubranch/GigaType");
+  expect(about).not.toContain("handy.computer/donate");
+  expect(headers).toContain("https://github.com/ubranch/GigaType");
+});
 ```
 
 Run `bun test tests/gigatype-branding.test.ts`; expected failure: GigaType visual files do not exist.
@@ -321,7 +335,14 @@ const GigaTypeMark = ({
     aria-label="GigaType"
     xmlns="http://www.w3.org/2000/svg"
   >
-    <rect x="8" y="8" width="112" height="112" rx="30" fill="var(--color-logo-primary)" />
+    <rect
+      x="8"
+      y="8"
+      width="112"
+      height="112"
+      rx="30"
+      fill="var(--color-logo-primary)"
+    />
     <path
       d="M84 43a32 32 0 1 0 4 42V66H65"
       fill="none"
@@ -355,7 +376,11 @@ interface GigaTypeLogoProps {
   className?: string;
 }
 
-const GigaTypeLogo = ({ width = 200, height, className }: GigaTypeLogoProps) => (
+const GigaTypeLogo = ({
+  width = 200,
+  height,
+  className,
+}: GigaTypeLogoProps) => (
   <div
     className={`flex items-center gap-2 ${className ?? ""}`}
     style={{ width, height }}
@@ -447,9 +472,11 @@ git commit -m "feat: add independent GigaType branding"
 ### Task 4: Make Windows build and verification tooling product-aware
 
 **Files:**
+
 - Modify: `scripts/build-windows-cuda.ps1`, `scripts/verify-windows-cuda.ps1`, `scripts/test-build-windows-cuda.ps1`, `scripts/test-verify-windows-cuda.ps1`, `.github/workflows/build.yml`, `tests/gigatype-branding.test.ts`
 
 **Interfaces:**
+
 - Consumes: `productName` and `version` from `src-tauri/tauri.conf.json`.
 - Produces: deterministic GigaType CPU/CUDA artifact names and audits that locate `GigaType.exe` without hardcoded upstream executable names.
 
@@ -458,19 +485,19 @@ git commit -m "feat: add independent GigaType branding"
 Add this test:
 
 ```typescript
-  test("build tooling derives GigaType artifacts", () => {
-    const build = read("scripts/build-windows-cuda.ps1");
-    const verify = read("scripts/verify-windows-cuda.ps1");
-    const workflow = read(".github/workflows/build.yml");
+test("build tooling derives GigaType artifacts", () => {
+  const build = read("scripts/build-windows-cuda.ps1");
+  const verify = read("scripts/verify-windows-cuda.ps1");
+  const workflow = read(".github/workflows/build.yml");
 
-    expect(build).toContain("$productName");
-    expect(build).toContain("$executableName");
-    expect(build).not.toContain('Filter "handy.exe"');
-    expect(verify).not.toContain('Filter "handy.exe"');
-    expect(build).not.toContain('"Handy_${version}');
-    expect(verify).not.toContain('"Handy_${version}');
-    expect(workflow).toContain('default: "gigatype"');
-  });
+  expect(build).toContain("$productName");
+  expect(build).toContain("$executableName");
+  expect(build).not.toContain('Filter "handy.exe"');
+  expect(verify).not.toContain('Filter "handy.exe"');
+  expect(build).not.toContain('"Handy_${version}');
+  expect(verify).not.toContain('"Handy_${version}');
+  expect(workflow).toContain('default: "gigatype"');
+});
 ```
 
 Run `bun test tests/gigatype-branding.test.ts`; expected failure on hardcoded `Handy` artifact/executable values.
@@ -524,9 +551,11 @@ Expected: commit succeeds; no generated `dist/` content is staged.
 ### Task 5: Replace README and finish developer documentation
 
 **Files:**
+
 - Modify: `README.md`, `BUILD.md`, `AGENTS.md`
 
 **Interfaces:**
+
 - Consumes: exact model IDs, package names, release version, scripts, and accelerator behavior implemented above.
 - Produces: friend-facing install/use/troubleshooting documentation and reproducible developer build instructions.
 
@@ -540,18 +569,31 @@ Use this exact section order:
 > Private, unofficial fork of cjpais/Handy. GigaType preserves upstream MIT attribution and adds GigaAM Multilingual plus verified Windows CUDA packaging. It is not endorsed by or affiliated with upstream Handy.
 
 ## What this fork adds
+
 ## Download: CPU or CUDA
+
 ## Install on Windows
+
 ## First transcription
+
 ## GigaAM model guide
+
 ## RTX 5080 setup
+
 ## Accelerator behavior
+
 ## Model limitations
+
 ## Privacy and model downloads
+
 ## Verify SHA256
+
 ## Troubleshooting
+
 ## Build from source
+
 ## Repository layout
+
 ## License and upstream attribution
 ```
 
@@ -600,10 +642,12 @@ git commit -m "docs: document GigaType installation and builds"
 ### Task 6: Run final source and branding gates
 
 **Files:**
+
 - Verify: complete committed source tree.
 - Modify only when a gate identifies a concrete defect.
 
 **Interfaces:**
+
 - Consumes: Tasks 1-5 commits.
 - Produces: source revision eligible for expensive Windows package builds.
 
@@ -649,9 +693,11 @@ Expected: branch `agent/gigatype-private-fork`, no unstaged/staged source change
 ### Task 7: Rebuild and verify final Windows installers
 
 **Files:**
+
 - Generate, do not commit: `dist/windows-cpu/**`, `dist/windows-cuda/**`.
 
 **Interfaces:**
+
 - Consumes: clean source revision and cached pinned native dependencies/models.
 - Produces: four final installers, SHA256 values, package audits, CPU smoke proof, CUDA provider proof, transcription parity, performance, and exact RTX 5080 VRAM evidence.
 
@@ -701,10 +747,12 @@ Expected: four rows, non-zero sizes, unique SHA256 values; CUDA assets remain ou
 ### Task 8: Create private GitHub repository, push source, and publish release
 
 **Files:**
+
 - External writes: GitHub repository `ubranch/GigaType`, branch `main`, release `v0.9.3-gigatype.1`, four assets.
 - Local Git metadata: add remote `private`.
 
 **Interfaces:**
+
 - Consumes: clean branch, four verified local artifacts, active `gh` authentication for `ubranch`.
 - Produces: private source repository and private non-draft release.
 
@@ -784,9 +832,11 @@ Expected: exactly four expected names/sizes; every available API `digest` equals
 ### Task 9: Grant friend read access
 
 **Files:**
+
 - External write: one GitHub collaborator invitation.
 
 **Interfaces:**
+
 - Consumes: exact friend GitHub username from the user.
 - Produces: least-privilege `pull` invitation and friend access to private source/release assets.
 
