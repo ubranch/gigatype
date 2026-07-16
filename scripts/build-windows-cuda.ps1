@@ -5,6 +5,7 @@ param(
   [string]$CacheRoot = (Join-Path $env:LOCALAPPDATA "handy-cuda-build"),
   [string]$OutputDir,
   [string]$PackageRoot,
+  [string]$ExpectedStagedRuntimeDir,
   [string]$Nsis,
   [string]$Msi,
   [ValidateSet("Cuda", "Cpu")]
@@ -18,6 +19,10 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "windows-package-helpers.ps1")
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+if (-not $ExpectedStagedRuntimeDir) {
+  $ExpectedStagedRuntimeDir = Join-Path $repoRoot "src-tauri\transcribe-libs"
+}
+$ExpectedStagedRuntimeDir = [System.IO.Path]::GetFullPath($ExpectedStagedRuntimeDir)
 if (-not $OutputDir) {
   $outputName = if ($Edition -eq "Cuda") { "windows-cuda" } else { "windows-cpu" }
   $OutputDir = Join-Path $repoRoot "dist\$outputName"
@@ -647,7 +652,8 @@ function Build-WindowsInstallers {
 function Assert-PackageRoot {
   param(
     [Parameter(Mandatory)][string]$Root,
-    [Parameter(Mandatory)][ValidateSet("Cuda", "Cpu")][string]$PackageEdition
+    [Parameter(Mandatory)][ValidateSet("Cuda", "Cpu")][string]$PackageEdition,
+    [Parameter(Mandatory)][string]$ExpectedRuntimeDirectory
   )
   $handy = Get-ChildItem -LiteralPath $Root -Filter "handy.exe" -File -Recurse | Select-Object -First 1
   if (-not $handy) { throw "package is missing handy.exe: $Root" }
@@ -661,17 +667,17 @@ function Assert-PackageRoot {
     }
   }
   $dllNames = @(Get-ChildItem -LiteralPath $Root -Filter "*.dll" -File -Recurse | ForEach-Object Name)
+  $stagedDlls = @(Get-ChildItem -LiteralPath $ExpectedRuntimeDirectory `
+    -Filter "*.dll" -File -ErrorAction SilentlyContinue)
+  foreach ($staged in $stagedDlls) {
+    if ($staged.Name -notin $dllNames) {
+      throw "package is missing staged runtime DLL $($staged.Name)"
+    }
+  }
   $cudaPatterns = @("onnxruntime_providers_cuda.dll", "cublas*.dll", "cudart*.dll", "cufft*.dll", "cudnn*.dll", "nvrtc*.dll", "nvJitLink*.dll")
   if ($PackageEdition -eq "Cuda") {
     foreach ($required in @("onnxruntime_providers_cuda.dll", "cublas64_13.dll", "cudnn64_9.dll")) {
       if ($required -notin $dllNames) { throw "CUDA package is missing $required" }
-    }
-    $stagedDlls = @(Get-ChildItem -LiteralPath (Join-Path $repoRoot "src-tauri\transcribe-libs") `
-      -Filter "*.dll" -File -ErrorAction SilentlyContinue)
-    foreach ($staged in $stagedDlls) {
-      if ($staged.Name -notin $dllNames) {
-        throw "CUDA package is missing staged CUDA runtime DLL $($staged.Name)"
-      }
     }
     if (-not (Get-ChildItem -LiteralPath $Root -Filter "THIRD_PARTY_NOTICES-CUDA.txt" -File -Recurse)) {
       throw "CUDA package is missing THIRD_PARTY_NOTICES-CUDA.txt"
@@ -692,6 +698,19 @@ function Assert-PackageRoot {
     foreach ($pattern in $cudaPatterns) {
       if ($dllNames | Where-Object { $_ -like $pattern }) {
         throw "CPU package unexpectedly contains CUDA runtime matching $pattern"
+      }
+    }
+    foreach ($pattern in @(
+      "THIRD_PARTY_NOTICES-CUDA.txt",
+      "cuda_*",
+      "libcublas*",
+      "libcufft*",
+      "libnvjitlink*",
+      "cudnn*"
+    )) {
+      $metadata = @(Get-ChildItem -LiteralPath $Root -Filter $pattern -File -Recurse)
+      if ($metadata.Count -gt 0) {
+        throw "CPU package unexpectedly contains NVIDIA metadata $($metadata.Name -join ', ')"
       }
     }
   }
@@ -737,7 +756,8 @@ function Audit-Installers {
   param(
     [Parameter(Mandatory)][string]$Nsis,
     [Parameter(Mandatory)][string]$Msi,
-    [Parameter(Mandatory)][ValidateSet("Cuda", "Cpu")][string]$PackageEdition
+    [Parameter(Mandatory)][ValidateSet("Cuda", "Cpu")][string]$PackageEdition,
+    [Parameter(Mandatory)][string]$ExpectedRuntimeDirectory
   )
   $results = @()
   foreach ($kind in @("nsis", "msi")) {
@@ -752,7 +772,7 @@ function Audit-Installers {
         $process = Start-Process -FilePath "msiexec.exe" -ArgumentList $arguments -Wait -PassThru
       }
       if ($process.ExitCode -ne 0) { throw "$kind extraction exited $($process.ExitCode)" }
-      $result = Assert-PackageRoot $root $PackageEdition
+      $result = Assert-PackageRoot $root $PackageEdition $ExpectedRuntimeDirectory
       $deviceProbe = Start-Process -FilePath $result.handy -ArgumentList "--list-devices" `
         -Wait -PassThru -NoNewWindow
       if ($deviceProbe.ExitCode -ne 0) {
@@ -790,17 +810,21 @@ if ($Mode -in @("Build", "All")) {
 }
 if ($Mode -eq "Audit") {
   if ($PackageRoot) {
-    $audit = Assert-PackageRoot ([System.IO.Path]::GetFullPath($PackageRoot)) $Edition
+    $audit = Assert-PackageRoot `
+      ([System.IO.Path]::GetFullPath($PackageRoot)) `
+      $Edition `
+      $ExpectedStagedRuntimeDir
   } elseif ($Nsis -and $Msi) {
     $audit = Audit-Installers `
       ([System.IO.Path]::GetFullPath($Nsis)) `
       ([System.IO.Path]::GetFullPath($Msi)) `
-      $Edition
+      $Edition `
+      $ExpectedStagedRuntimeDir
   } else {
     throw "Audit mode requires -PackageRoot or both -Nsis and -Msi"
   }
 } elseif ($Mode -eq "All") {
-  $audit = Audit-Installers $built.nsis.path $built.msi.path $Edition
+  $audit = Audit-Installers $built.nsis.path $built.msi.path $Edition $ExpectedStagedRuntimeDir
 }
 
 $result = [ordered]@{

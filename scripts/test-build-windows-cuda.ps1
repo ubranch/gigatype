@@ -172,9 +172,6 @@ if ($entrypointSource -notmatch 'CC_SHELL_ESCAPED_FLAGS=1') {
 if ($entrypointSource -notmatch 'cuda_cudart-LICENSE\.txt') {
   throw "CUDA package audit must require prepared runtime license files"
 }
-if ($entrypointSource -notmatch 'staged CUDA runtime DLL') {
-  throw "CUDA package audit must require every staged runtime DLL"
-}
 if ($entrypointSource -notmatch '"bcryptprimitives\.dll"') {
   throw "package audit must permit the Windows bcrypt primitives system DLL"
 }
@@ -254,6 +251,56 @@ function Assert-CpuOrtLicenseRequired {
   }
 }
 
+function Assert-CpuPackageRejected {
+  param(
+    [string[]]$ExpectedStagedDlls = @(),
+    [string[]]$PackagedDlls = @(),
+    [string[]]$PackageFiles = @(),
+    [Parameter(Mandatory)][string]$Pattern
+  )
+
+  $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+  $fixtureRoot = Join-Path $tempBase ("handy-cpu-package-behavior-" + [guid]::NewGuid().ToString("N"))
+  $packageRoot = Join-Path $fixtureRoot "package"
+  $stagedRoot = Join-Path $fixtureRoot "expected-staging"
+  New-Item -ItemType Directory -Path $packageRoot, $stagedRoot | Out-Null
+  try {
+    foreach ($name in @(
+      "handy.exe",
+      "onnxruntime-LICENSE.txt",
+      "onnxruntime-ThirdPartyNotices.txt"
+    )) {
+      New-Item -ItemType File -Path (Join-Path $packageRoot $name) | Out-Null
+    }
+    foreach ($name in $ExpectedStagedDlls) {
+      New-Item -ItemType File -Path (Join-Path $stagedRoot $name) | Out-Null
+    }
+    foreach ($name in $PackagedDlls) {
+      New-Item -ItemType File -Path (Join-Path $packageRoot $name) | Out-Null
+    }
+    foreach ($name in $PackageFiles) {
+      New-Item -ItemType File -Path (Join-Path $packageRoot $name) | Out-Null
+    }
+
+    try {
+      $null = & $entrypoint -Mode Audit -Edition Cpu -PackageRoot $packageRoot `
+        -ExpectedStagedRuntimeDir $stagedRoot -Json
+      throw "CPU package audit unexpectedly passed; expected $Pattern"
+    } catch {
+      if ($_.Exception.Message -notlike $Pattern) {
+        throw "CPU package audit error '$($_.Exception.Message)' did not match $Pattern"
+      }
+    }
+  } finally {
+    $resolvedFixtureRoot = [System.IO.Path]::GetFullPath($fixtureRoot)
+    if (-not $resolvedFixtureRoot.StartsWith($tempBase, [System.StringComparison]::OrdinalIgnoreCase) -or
+      (Split-Path -Leaf $resolvedFixtureRoot) -notlike "handy-cpu-package-behavior-*") {
+      throw "refusing to remove unexpected CPU package fixture path: $resolvedFixtureRoot"
+    }
+    Remove-Item -LiteralPath $resolvedFixtureRoot -Recurse -Force
+  }
+}
+
 Assert-ModelWeightRejected -Edition Cpu -FileName "legacy-model.bin"
 Assert-ModelWeightRejected -Edition Cpu -FileName "legacy-model.ggml"
 Assert-ModelWeightRejected -Edition Cpu -FileName "current-model.onnx.data"
@@ -262,6 +309,24 @@ Assert-ModelWeightRejected -Edition Cuda -FileName "current-model.onnx"
 Assert-ModelWeightRejected -Edition Cuda -FileName "current-model.onnx.data"
 Assert-CpuOrtLicenseRequired -MissingName "onnxruntime-LICENSE.txt"
 Assert-CpuOrtLicenseRequired -MissingName "onnxruntime-ThirdPartyNotices.txt"
+Assert-CpuPackageRejected `
+  -ExpectedStagedDlls @("transcribe-core.dll", "ggml-runtime.dll") `
+  -PackagedDlls @("transcribe-core.dll") `
+  -Pattern "*package is missing staged runtime DLL ggml-runtime.dll*"
+Assert-CpuPackageRejected `
+  -PackageFiles @("THIRD_PARTY_NOTICES-CUDA.txt") `
+  -Pattern "*CPU package unexpectedly contains NVIDIA metadata*THIRD_PARTY_NOTICES-CUDA.txt*"
+foreach ($nvidiaLicense in @(
+  "cuda_cudart-LICENSE.txt",
+  "libcublas-LICENSE.txt",
+  "libcufft-LICENSE.txt",
+  "libnvjitlink-LICENSE.txt",
+  "cudnn-LICENSE.txt"
+)) {
+  Assert-CpuPackageRejected `
+    -PackageFiles @($nvidiaLicense) `
+    -Pattern "*CPU package unexpectedly contains NVIDIA metadata*$nvidiaLicense*"
+}
 
 $verifier = Join-Path $PSScriptRoot "verify-windows-cuda.ps1"
 $verifierSource = Get-Content -LiteralPath $verifier -Raw
