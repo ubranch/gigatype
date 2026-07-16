@@ -13,6 +13,19 @@ $executableName = "$productName.exe"
 if (-not $productName -or -not $version) {
   throw "tauri.conf.json must define productName and version"
 }
+$commonResourceRoot = Join-Path $repoRoot "src-tauri\resources"
+$commonCudaNotices = @(Get-ChildItem -LiteralPath $commonResourceRoot -Filter "THIRD_PARTY_NOTICES-CUDA.txt" -File -Recurse)
+if ($commonCudaNotices.Count -gt 0) {
+  throw "CUDA-only notice must live outside Tauri common resources: $($commonCudaNotices.FullName -join ', ')"
+}
+$cudaNoticeSource = Join-Path $repoRoot "src-tauri\cuda-resources\THIRD_PARTY_NOTICES-CUDA.txt"
+if (-not (Test-Path -LiteralPath $cudaNoticeSource -PathType Leaf)) {
+  throw "dedicated CUDA notice source is missing: $cudaNoticeSource"
+}
+$wixConfig = $appConfig.bundle.windows.PSObject.Properties["wix"]
+if (-not $wixConfig -or [string]$wixConfig.Value.version -ne "0.9.3.1") {
+  throw "tauri.conf.json must map release 0.9.3-gigatype.1 to MSI version 0.9.3.1"
+}
 
 $helperModule = Join-Path $PSScriptRoot "windows-package-helpers.ps1"
 if (-not (Test-Path -LiteralPath $helperModule -PathType Leaf)) {

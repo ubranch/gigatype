@@ -172,7 +172,7 @@ before commit, run the narrow tests for changed behavior plus relevant format/li
 
 preserve root MIT text and `Copyright (c) 2025 CJ Pais`. keep the unofficial-fork and no-upstream-endorsement notice in friend-facing documentation. model weights retain their model-repository terms and are not relicensed by the source MIT license.
 
-Windows package code must continue staging ONNX Runtime license/notices. CUDA packages must also stage official CUDA/cuDNN license files and `src-tauri/resources/licenses/THIRD_PARTY_NOTICES-CUDA.txt`.
+Windows package code must continue staging ONNX Runtime license/notices. CUDA packages must also stage official CUDA/cuDNN license files and `src-tauri/cuda-resources/THIRD_PARTY_NOTICES-CUDA.txt`.
 
 ## GitHub workflow
 

@@ -227,4 +227,4 @@ publish these final hashes beside the exact filenames in the private release not
 
 ## License staging
 
-the source is MIT-licensed under the preserved root `LICENSE`. model weights remain under the terms published by their model repositories and are not part of source or installers. CPU packages stage ONNX Runtime `LICENSE` and `ThirdPartyNotices.txt`; CUDA packages additionally stage official CUDA and cuDNN license files plus `src-tauri/resources/licenses/THIRD_PARTY_NOTICES-CUDA.txt`.
+the source is MIT-licensed under the preserved root `LICENSE`. model weights remain under the terms published by their model repositories and are not part of source or installers. CPU packages stage ONNX Runtime `LICENSE` and `ThirdPartyNotices.txt`; CUDA packages additionally stage official CUDA and cuDNN license files plus `src-tauri/cuda-resources/THIRD_PARTY_NOTICES-CUDA.txt`.

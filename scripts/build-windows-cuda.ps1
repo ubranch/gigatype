@@ -432,7 +432,7 @@ function Prepare-CudaRuntime {
   Copy-ArchiveRuntime $cudnnExtracted $runtime
   Copy-ArchiveLicense $cudnnExtracted "cudnn" $licenses
 
-  $noticeSource = Join-Path $repoRoot "src-tauri\resources\licenses\THIRD_PARTY_NOTICES-CUDA.txt"
+  $noticeSource = Join-Path $repoRoot "src-tauri\cuda-resources\THIRD_PARTY_NOTICES-CUDA.txt"
   if (-not (Test-Path -LiteralPath $noticeSource -PathType Leaf)) {
     throw "tracked CUDA notice source is missing: $noticeSource"
   }

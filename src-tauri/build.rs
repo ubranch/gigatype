@@ -186,7 +186,7 @@ fn stage_onnxruntime_runtime() {
     }
 
     let notice_source = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap())
-        .join("resources/licenses/THIRD_PARTY_NOTICES-CUDA.txt");
+        .join("cuda-resources/THIRD_PARTY_NOTICES-CUDA.txt");
     if !notice_source.is_file() {
         panic!("CUDA notice source is missing: {}", notice_source.display());
     }
