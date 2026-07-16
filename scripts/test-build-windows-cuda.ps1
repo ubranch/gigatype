@@ -67,6 +67,69 @@ if ($entrypointSource -notmatch 'function Remove-AuditDirectoryWithRetry') {
 if ($entrypointSource -notmatch 'Remove-AuditDirectoryWithRetry \$root') {
   throw "package audit finally block must use bounded cleanup retry"
 }
+if ($entrypointSource -notmatch 'function Prepare-CpuRuntime') {
+  throw "CPU edition must have a CPU-only ORT preparation path"
+}
+if ($entrypointSource -notmatch '\$prepared\s*=\s*if\s*\(\$Edition\s*-eq\s*"Cuda"\)\s*\{\s*Prepare-CudaRuntime\s*\}\s*else\s*\{\s*Prepare-CpuRuntime\s*\}') {
+  throw "runtime preparation must dispatch by edition"
+}
+if ($entrypointSource -notmatch 'function Get-SingleVersionedArtifact') {
+  throw "installer selection must use a current-version singleton helper"
+}
+if ($entrypointSource -notmatch '\[regex\]::Escape\(\$Version\)') {
+  throw "installer selection must match an exact escaped version token"
+}
+if ($entrypointSource -match '(?s)\$(nsis|msi)\s*=\s*Get-ChildItem.+?Select-Object -First 1') {
+  throw "installer selection must never take the first arbitrary bundle artifact"
+}
+if ($entrypointSource -match 'Reset-OwnedDirectory \$targetDir') {
+  throw "installer build must preserve the reusable compiled target directory"
+}
+$bundleResetIndex = $entrypointSource.IndexOf('Reset-OwnedDirectory $bundleRoot')
+$nativeBuildIndex = $entrypointSource.IndexOf('Start-Process -FilePath "cmd.exe"')
+if ($bundleResetIndex -lt 0 -or $nativeBuildIndex -lt 0 -or $bundleResetIndex -gt $nativeBuildIndex) {
+  throw "owned edition bundle output must be reset before the native build"
+}
+if ($entrypointSource -notmatch '(?s)Get-SingleVersionedArtifact.+?\$version.+?\.exe.+?Get-SingleVersionedArtifact.+?\$version.+?\.msi') {
+  throw "NSIS and MSI selection must each require exactly one current-version artifact"
+}
+
+function Assert-ModelWeightRejected {
+  param(
+    [Parameter(Mandatory)][ValidateSet("Cuda", "Cpu")][string]$Edition,
+    [Parameter(Mandatory)][string]$FileName
+  )
+
+  $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
+  $root = Join-Path $tempBase ("handy-package-audit-" + [guid]::NewGuid().ToString("N"))
+  New-Item -ItemType Directory -Path $root | Out-Null
+  try {
+    New-Item -ItemType File -Path (Join-Path $root "handy.exe") | Out-Null
+    New-Item -ItemType File -Path (Join-Path $root $FileName) | Out-Null
+    try {
+      $null = & $entrypoint -Mode Audit -Edition $Edition -PackageRoot $root -Json
+      throw "$Edition package audit accepted model weight $FileName"
+    } catch {
+      if ($_.Exception.Message -notmatch 'package unexpectedly contains model weights') {
+        throw "$Edition package audit did not reject $FileName as model weights: $($_.Exception.Message)"
+      }
+    }
+  } finally {
+    $resolvedRoot = [System.IO.Path]::GetFullPath($root)
+    if (-not $resolvedRoot.StartsWith($tempBase, [System.StringComparison]::OrdinalIgnoreCase) -or
+      (Split-Path -Leaf $resolvedRoot) -notlike "handy-package-audit-*") {
+      throw "refusing to remove unexpected package-audit test path: $resolvedRoot"
+    }
+    Remove-Item -LiteralPath $resolvedRoot -Recurse -Force
+  }
+}
+
+Assert-ModelWeightRejected -Edition Cpu -FileName "legacy-model.bin"
+Assert-ModelWeightRejected -Edition Cpu -FileName "legacy-model.ggml"
+Assert-ModelWeightRejected -Edition Cpu -FileName "current-model.onnx.data"
+Assert-ModelWeightRejected -Edition Cuda -FileName "current-model.gguf"
+Assert-ModelWeightRejected -Edition Cuda -FileName "current-model.onnx"
+Assert-ModelWeightRejected -Edition Cuda -FileName "current-model.onnx.data"
 
 $verifier = Join-Path $PSScriptRoot "verify-windows-cuda.ps1"
 $verifierSource = Get-Content -LiteralPath $verifier -Raw
@@ -123,5 +186,14 @@ if ($LASTEXITCODE -ne 0) {
 }
 $cpuPlan = $cpuPlanJson | ConvertFrom-Json
 if ($cpuPlan.edition -ne "cpu") { throw "unexpected CPU edition: $($cpuPlan.edition)" }
+if ($cpuPlan.ort.asset -ne "onnxruntime-win-x64-1.24.2.zip") {
+  throw "CPU edition must use the CPU-only ORT asset"
+}
+if ($cpuPlan.ort.sha256 -ne "8e3e9c826375352e29cb2614fe44f3d7a4b0ff7b8028ad7a456af9d949a7e8b0") {
+  throw "unexpected CPU ORT SHA256"
+}
+if ($null -ne $cpuPlan.cuda -or $null -ne $cpuPlan.cudnn) {
+  throw "CPU plan must not contain CUDA, cuDNN, or NVIDIA download metadata"
+}
 
 Write-Output "build-windows-cuda plan contract: pass"

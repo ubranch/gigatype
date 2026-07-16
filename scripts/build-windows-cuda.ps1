@@ -25,8 +25,13 @@ $CacheRoot = [System.IO.Path]::GetFullPath($CacheRoot)
 $OutputDir = [System.IO.Path]::GetFullPath($OutputDir)
 
 $ortVersion = "1.24.2"
-$ortAsset = "onnxruntime-win-x64-gpu_cuda13-1.24.2.zip"
-$ortSha256 = "72207a283ec9886e1968a4183636a7665c78e2154d4f4adc16e61193dd7a74f1"
+$cpuOrtAsset = "onnxruntime-win-x64-1.24.2.zip"
+$cpuOrtSha256 = "8e3e9c826375352e29cb2614fe44f3d7a4b0ff7b8028ad7a456af9d949a7e8b0"
+$cpuOrtSize = 74075355
+$cudaOrtAsset = "onnxruntime-win-x64-gpu_cuda13-1.24.2.zip"
+$cudaOrtSha256 = "72207a283ec9886e1968a4183636a7665c78e2154d4f4adc16e61193dd7a74f1"
+$ortAsset = if ($Edition -eq "Cuda") { $cudaOrtAsset } else { $cpuOrtAsset }
+$ortSha256 = if ($Edition -eq "Cuda") { $cudaOrtSha256 } else { $cpuOrtSha256 }
 $ortUrl = "https://github.com/microsoft/onnxruntime/releases/download/v$ortVersion/$ortAsset"
 $cudaManifestName = "redistrib_13.0.2.json"
 $cudaManifestSha256 = "fce66717a81c510ffeb89ecc3e79849ab34af3b80139f750876d9033e31d71c2"
@@ -46,19 +51,23 @@ $plan = [ordered]@{
     url = $ortUrl
     sha256 = $ortSha256
   }
-  cuda = [ordered]@{
-    manifest = $cudaManifestName
-    manifest_url = $cudaManifestUrl
-    manifest_sha256 = $cudaManifestSha256
-    components = $cudaComponents
-  }
-  cudnn = [ordered]@{
-    version = $cudnnVersion
-    manifest = $cudnnManifestName
-    manifest_url = $cudnnManifestUrl
-    manifest_sha256 = $cudnnManifestSha256
-    sha256 = $cudnnSha256
-  }
+  cuda = if ($Edition -eq "Cuda") {
+    [ordered]@{
+      manifest = $cudaManifestName
+      manifest_url = $cudaManifestUrl
+      manifest_sha256 = $cudaManifestSha256
+      components = $cudaComponents
+    }
+  } else { $null }
+  cudnn = if ($Edition -eq "Cuda") {
+    [ordered]@{
+      version = $cudnnVersion
+      manifest = $cudnnManifestName
+      manifest_url = $cudnnManifestUrl
+      manifest_sha256 = $cudnnManifestSha256
+      sha256 = $cudnnSha256
+    }
+  } else { $null }
 }
 
 if ($Mode -eq "Plan") {
@@ -283,6 +292,57 @@ function Test-PeClosure {
   return [pscustomobject]@{ files = $peFiles.Count; unresolved = 0 }
 }
 
+function Prepare-CpuRuntime {
+  $downloads = Join-Path $CacheRoot "downloads"
+  $extracted = Join-Path $CacheRoot "extracted"
+  $runtime = Join-Path $CacheRoot "runtime-cpu"
+  New-Item -ItemType Directory -Path $downloads, $extracted -Force | Out-Null
+
+  $ortArchive = Join-Path $downloads $cpuOrtAsset
+  Get-VerifiedDownload $ortUrl $ortArchive $cpuOrtSha256 $cpuOrtSize
+  $ortExtracted = Join-Path $extracted "ort-$ortVersion-cpu"
+  Expand-VerifiedArchive $ortArchive $ortExtracted $cpuOrtSha256
+
+  $ortRoot = Join-Path $ortExtracted "onnxruntime-win-x64-$ortVersion"
+  if (-not (Test-Path -LiteralPath $ortRoot -PathType Container)) {
+    throw "extracted CPU ORT root not found: $ortRoot"
+  }
+  $ortLib = Join-Path $ortRoot "lib"
+  $onnxRuntime = Join-Path $ortLib "onnxruntime.dll"
+  if (-not (Test-Path -LiteralPath $onnxRuntime -PathType Leaf)) {
+    throw "CPU ORT archive is missing onnxruntime.dll"
+  }
+
+  Reset-OwnedDirectory $runtime
+  $licenses = Join-Path $runtime "licenses"
+  New-Item -ItemType Directory -Path $licenses -Force | Out-Null
+  Copy-Item -LiteralPath $onnxRuntime -Destination $runtime
+  Copy-Item -LiteralPath (Join-Path $ortRoot "LICENSE") -Destination (Join-Path $licenses "onnxruntime-LICENSE.txt")
+  Copy-Item -LiteralPath (Join-Path $ortRoot "ThirdPartyNotices.txt") -Destination (Join-Path $licenses "onnxruntime-ThirdPartyNotices.txt")
+
+  $closure = Test-PeClosure $runtime
+  if ($GithubEnvironment) {
+    Add-Content -LiteralPath $GithubEnvironment -Value "ORT_LIB_LOCATION=$ortLib"
+    Add-Content -LiteralPath $GithubEnvironment -Value "ORT_PREFER_DYNAMIC_LINK=1"
+  }
+
+  return [pscustomobject]@{
+    cache_root = $CacheRoot
+    runtime_dir = $runtime
+    ort_lib = $ortLib
+    downloads = $script:downloadCount
+    cache_hits = $script:cacheHitCount
+    dll_count = 1
+    pe_files = $closure.files
+    unresolved_imports = $closure.unresolved
+    dlls = @([pscustomobject]@{
+      name = "onnxruntime.dll"
+      bytes = (Get-Item -LiteralPath $onnxRuntime).Length
+      sha256 = Get-Sha256 $onnxRuntime
+    })
+  }
+}
+
 function Prepare-CudaRuntime {
   $downloads = Join-Path $CacheRoot "downloads"
   $extracted = Join-Path $CacheRoot "extracted"
@@ -485,6 +545,25 @@ function Find-WindowsIncludeDirectories {
   return $directories
 }
 
+function Get-SingleVersionedArtifact {
+  param(
+    [Parameter(Mandatory)][string]$Directory,
+    [Parameter(Mandatory)][string]$Version,
+    [Parameter(Mandatory)][ValidateSet(".exe", ".msi")][string]$Extension,
+    [Parameter(Mandatory)][string]$Label
+  )
+
+  $artifacts = @(Get-ChildItem -LiteralPath $Directory -Filter "*$Extension" -File -ErrorAction SilentlyContinue)
+  $escapedVersion = [regex]::Escape($Version)
+  $versionPattern = "(?<![0-9])$escapedVersion(?![0-9])"
+  $matching = @($artifacts | Where-Object { $_.BaseName -match $versionPattern })
+  if ($artifacts.Count -ne 1 -or $matching.Count -ne 1) {
+    $found = if ($artifacts.Count -eq 0) { "none" } else { $artifacts.Name -join ", " }
+    throw "$Label bundle output must contain exactly one current-version artifact for $Version; found: $found"
+  }
+  return $matching[0]
+}
+
 function Build-WindowsInstallers {
   param(
     [Parameter(Mandatory)]$Prepared,
@@ -572,6 +651,8 @@ function Build-WindowsInstallers {
     $lines = @($lines[0..$ortPreferenceIndex] + $cudaEnvironment + $lines[($ortPreferenceIndex + 1)..($lines.Count - 1)])
   }
   Set-Content -LiteralPath $cmdPath -Value $lines -Encoding ascii
+  $bundleRoot = Join-Path $targetDir "release\bundle"
+  Reset-OwnedDirectory $bundleRoot
   $buildProcess = Start-Process -FilePath "cmd.exe" `
     -ArgumentList @("/d", "/c", "`"$cmdPath`"") `
     -Wait -PassThru -NoNewWindow
@@ -580,10 +661,8 @@ function Build-WindowsInstallers {
   }
 
   $version = (Get-Content -LiteralPath (Join-Path $repoRoot "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).version
-  $bundleRoot = Join-Path $targetDir "release\bundle"
-  $nsis = Get-ChildItem -LiteralPath (Join-Path $bundleRoot "nsis") -Filter "*.exe" -File | Select-Object -First 1
-  $msi = Get-ChildItem -LiteralPath (Join-Path $bundleRoot "msi") -Filter "*.msi" -File | Select-Object -First 1
-  if (-not $nsis -or -not $msi) { throw "CUDA build did not produce both NSIS and MSI" }
+  $nsis = Get-SingleVersionedArtifact (Join-Path $bundleRoot "nsis") $version ".exe" "NSIS"
+  $msi = Get-SingleVersionedArtifact (Join-Path $bundleRoot "msi") $version ".msi" "MSI"
   New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
   if ($PackageEdition -eq "Cuda") {
     $nsisOutput = Join-Path $OutputDir "Handy_${version}_x64-cuda13-setup.exe"
@@ -608,6 +687,16 @@ function Assert-PackageRoot {
   )
   $handy = Get-ChildItem -LiteralPath $Root -Filter "handy.exe" -File -Recurse | Select-Object -First 1
   if (-not $handy) { throw "package is missing handy.exe: $Root" }
+  $unexpectedModels = @(Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object {
+      $name = $_.Name.ToLowerInvariant()
+      $name -ne "silero_vad_v4.onnx" -and (
+        $name.EndsWith(".onnx.data", [System.StringComparison]::Ordinal) -or
+        $_.Extension.ToLowerInvariant() -in @(".bin", ".gguf", ".ggml", ".onnx")
+      )
+    })
+  if ($unexpectedModels.Count -gt 0) {
+    throw "package unexpectedly contains model weights: $($unexpectedModels.Name -join ', ')"
+  }
   $dllNames = @(Get-ChildItem -LiteralPath $Root -Filter "*.dll" -File -Recurse | ForEach-Object Name)
   $cudaPatterns = @("onnxruntime_providers_cuda.dll", "cublas*.dll", "cudart*.dll", "cufft*.dll", "cudnn*.dll", "nvrtc*.dll", "nvJitLink*.dll")
   if ($PackageEdition -eq "Cuda") {
@@ -637,13 +726,6 @@ function Assert-PackageRoot {
       if (-not (Get-ChildItem -LiteralPath $Root -Filter $license -File -Recurse)) {
         throw "CUDA package is missing runtime license $license"
       }
-    }
-    $unexpectedModels = Get-ChildItem -LiteralPath $Root -File -Recurse | Where-Object {
-      $_.Extension -in @(".gguf", ".ggml") -or
-        ($_.Extension -eq ".onnx" -and $_.Name -ne "silero_vad_v4.onnx")
-    }
-    if ($unexpectedModels) {
-      throw "CUDA package unexpectedly contains model weights: $($unexpectedModels.Name -join ', ')"
     }
   } else {
     foreach ($pattern in $cudaPatterns) {
@@ -736,7 +818,11 @@ $built = $null
 $audit = $null
 
 if ($Mode -in @("Prepare", "Build", "All")) {
-  $prepared = Prepare-CudaRuntime
+  $prepared = if ($Edition -eq "Cuda") {
+    Prepare-CudaRuntime
+  } else {
+    Prepare-CpuRuntime
+  }
 }
 if ($Mode -in @("Build", "All")) {
   $built = Build-WindowsInstallers $prepared $Edition
