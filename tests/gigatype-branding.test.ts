@@ -12,6 +12,7 @@ describe("GigaType branding contract", () => {
     const cargo = read("src-tauri/Cargo.toml");
 
     expect(tauri.productName).toBe("GigaType");
+    expect(tauri.mainBinaryName).toBe("GigaType");
     expect(tauri.version).toBe("0.9.3-gigatype.1");
     expect(tauri.identifier).toBe("io.github.ubranch.gigatype");
     expect(tauri.bundle.createUpdaterArtifacts).toBe(false);
@@ -20,6 +21,13 @@ describe("GigaType branding contract", () => {
     expect(packageJson.version).toBe("0.9.3-gigatype.1");
     expect(cargo).toContain('name = "gigatype"');
     expect(cargo).toContain('name = "gigatype_app_lib"');
+  });
+
+  test("uses the renamed library crate in disabled source targets", () => {
+    const disabledCli = read("src-tauri/src/audio_toolkit/bin/cli.rs");
+
+    expect(disabledCli).toContain("use gigatype_app_lib::audio_toolkit");
+    expect(disabledCli).not.toContain("handy_app_lib");
   });
 
   test("contains no upstream updater integration", () => {
