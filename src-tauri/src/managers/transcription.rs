@@ -2017,7 +2017,7 @@ fn effective_ort_accelerator_preference(
 ) -> (OrtAcceleratorSetting, bool) {
     process_override
         .map(|requested| (requested, true))
-        .unwrap_or((persisted, false))
+        .unwrap_or((persisted, persisted != OrtAcceleratorSetting::Auto))
 }
 
 fn apply_ort_accelerator_preference(
@@ -2309,5 +2309,30 @@ mod tests {
 
         assert_eq!(requested, OrtAcceleratorSetting::Cpu);
         assert!(strict);
+    }
+
+    #[test]
+    fn persisted_cuda_failure_is_strict_while_auto_may_fallback() {
+        let failed_cuda = cuda_diagnostic_from_probe(
+            true,
+            Err("CUDAExecutionProvider registration failed: missing app-local component onnxruntime_providers_cuda.dll".to_string()),
+        );
+
+        let (persisted_cuda, cuda_strict) =
+            effective_ort_accelerator_preference(OrtAcceleratorSetting::Cuda, None);
+        assert_eq!(persisted_cuda, OrtAcceleratorSetting::Cuda);
+        assert!(cuda_strict);
+        assert!(resolve_ort_accelerator(persisted_cuda, &failed_cuda).is_err());
+
+        let (persisted_auto, auto_strict) =
+            effective_ort_accelerator_preference(OrtAcceleratorSetting::Auto, None);
+        assert_eq!(persisted_auto, OrtAcceleratorSetting::Auto);
+        assert!(!auto_strict);
+        assert_eq!(
+            resolve_ort_accelerator(persisted_auto, &failed_cuda)
+                .unwrap()
+                .selected,
+            transcribe_rs::OrtAccelerator::CpuOnly
+        );
     }
 }
