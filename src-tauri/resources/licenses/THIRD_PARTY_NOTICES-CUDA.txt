@@ -1,4 +1,4 @@
-Handy CUDA 13 edition — third-party runtime notices
+GigaType CUDA 13 edition — third-party runtime notices
 
 This edition is for Windows x64 systems with a supported NVIDIA driver. It
 redistributes runtime libraries only; CUDA developer tools and model weights are
@@ -24,4 +24,4 @@ License: NVIDIA cuDNN Software License Agreement. The official archive's
 LICENSE.txt is included in the packaged licenses directory.
 
 NVIDIA driver libraries such as nvcuda.dll are supplied by the installed NVIDIA
-display driver and are not redistributed by Handy.
+display driver and are not redistributed by GigaType.

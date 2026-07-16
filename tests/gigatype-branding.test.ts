@@ -72,4 +72,28 @@ describe("GigaType branding contract", () => {
 
     expect(flake).toContain('mainProgram = "GigaType";');
   });
+
+  test("uses independent user-facing visuals and links", () => {
+    const sidebar = read("src/components/Sidebar.tsx");
+    const about = read("src/components/settings/about/AboutSettings.tsx");
+    const headers = read("src-tauri/src/llm_client.rs");
+
+    expect(
+      existsSync(join(root, "src/components/icons/GigaTypeMark.tsx")),
+    ).toBe(true);
+    expect(
+      existsSync(join(root, "src/components/icons/GigaTypeLogo.tsx")),
+    ).toBe(true);
+    expect(existsSync(join(root, "src/components/icons/HandyHand.tsx"))).toBe(
+      false,
+    );
+    expect(
+      existsSync(join(root, "src/components/icons/HandyTextLogo.tsx")),
+    ).toBe(false);
+    expect(sidebar).toContain("GigaTypeLogo");
+    expect(sidebar).toContain("GigaTypeMark");
+    expect(about).toContain("https://github.com/ubranch/GigaType");
+    expect(about).not.toContain("handy.computer/donate");
+    expect(headers).toContain("https://github.com/ubranch/GigaType");
+  });
 });
