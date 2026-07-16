@@ -2,7 +2,7 @@
 param(
   [ValidateSet("Plan", "Prepare", "Build", "Audit", "All")]
   [string]$Mode = "All",
-  [string]$CacheRoot = (Join-Path $env:LOCALAPPDATA "handy-cuda-build"),
+  [string]$CacheRoot = (Join-Path $env:LOCALAPPDATA "gigatype-cuda-build"),
   [string]$OutputDir,
   [string]$PackageRoot,
   [string]$ExpectedStagedRuntimeDir,
@@ -19,6 +19,14 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "windows-package-helpers.ps1")
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$appConfig = Get-Content -LiteralPath (Join-Path $repoRoot "src-tauri\tauri.conf.json") -Raw |
+  ConvertFrom-Json
+$productName = [string]$appConfig.productName
+$version = [string]$appConfig.version
+$executableName = "$productName.exe"
+if (-not $productName -or -not $version) {
+  throw "tauri.conf.json must define productName and version"
+}
 if (-not $ExpectedStagedRuntimeDir) {
   $ExpectedStagedRuntimeDir = Join-Path $repoRoot "src-tauri\transcribe-libs"
 }
@@ -48,9 +56,24 @@ $cudnnManifestName = "redistrib_9.16.0.json"
 $cudnnManifestSha256 = "c95167877ac0ded30a29accc9d337a5e60cd70d1a01a3492de56624b39eab868"
 $cudnnManifestUrl = "https://developer.download.nvidia.com/compute/cudnn/redist/$cudnnManifestName"
 $cudnnSha256 = "606c405a46e55bec01be8dd81092d238900f4028fee10a7ed1bc32cd5e23714e"
+$artifactNames = if ($Edition -eq "Cuda") {
+  [ordered]@{
+    nsis = "$($productName)_${version}_x64-cuda13-setup.exe"
+    msi = "$($productName)_${version}_x64-cuda13_en-US.msi"
+  }
+} else {
+  [ordered]@{
+    nsis = "$($productName)_${version}_x64-setup.exe"
+    msi = "$($productName)_${version}_x64_en-US.msi"
+  }
+}
 
 $plan = [ordered]@{
+  product_name = $productName
+  version = $version
+  executable = $executableName
   edition = if ($Edition -eq "Cuda") { "cuda13" } else { "cpu" }
+  artifacts = $artifactNames
   ort = [ordered]@{
     version = $ortVersion
     asset = $ortAsset
@@ -629,17 +652,11 @@ function Build-WindowsInstallers {
     throw "native Windows $PackageEdition build exited $($buildProcess.ExitCode)"
   }
 
-  $version = (Get-Content -LiteralPath (Join-Path $repoRoot "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json).version
   $nsis = Get-SingleVersionedArtifact (Join-Path $bundleRoot "nsis") $version ".exe" "NSIS"
   $msi = Get-SingleVersionedArtifact (Join-Path $bundleRoot "msi") $version ".msi" "MSI"
   New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
-  if ($PackageEdition -eq "Cuda") {
-    $nsisOutput = Join-Path $OutputDir "Handy_${version}_x64-cuda13-setup.exe"
-    $msiOutput = Join-Path $OutputDir "Handy_${version}_x64-cuda13_en-US.msi"
-  } else {
-    $nsisOutput = Join-Path $OutputDir "Handy_${version}_x64-setup.exe"
-    $msiOutput = Join-Path $OutputDir "Handy_${version}_x64_en-US.msi"
-  }
+  $nsisOutput = Join-Path $OutputDir $artifactNames.nsis
+  $msiOutput = Join-Path $OutputDir $artifactNames.msi
   Copy-Item -LiteralPath $nsis.FullName -Destination $nsisOutput -Force
   Copy-Item -LiteralPath $msi.FullName -Destination $msiOutput -Force
 
@@ -655,8 +672,9 @@ function Assert-PackageRoot {
     [Parameter(Mandatory)][ValidateSet("Cuda", "Cpu")][string]$PackageEdition,
     [Parameter(Mandatory)][string]$ExpectedRuntimeDirectory
   )
-  $handy = Get-ChildItem -LiteralPath $Root -Filter "handy.exe" -File -Recurse | Select-Object -First 1
-  if (-not $handy) { throw "package is missing handy.exe: $Root" }
+  $executable = Get-ChildItem -LiteralPath $Root -Filter $executableName -File -Recurse |
+    Select-Object -First 1
+  if (-not $executable) { throw "package is missing ${executableName}: $Root" }
   $unexpectedModels = @(Get-UnexpectedModelWeightFiles -Root $Root)
   if ($unexpectedModels.Count -gt 0) {
     throw "package unexpectedly contains model weights: $($unexpectedModels.Name -join ', ')"
@@ -721,7 +739,7 @@ function Assert-PackageRoot {
     dll_count = $dllNames.Count
     pe_files = $closure.files
     unresolved_imports = $closure.unresolved
-    handy = $handy.FullName
+    executable = $executable.FullName
   }
 }
 
@@ -733,7 +751,7 @@ function Remove-AuditDirectoryWithRetry {
   ) + [System.IO.Path]::DirectorySeparatorChar
   $fullPath = [System.IO.Path]::GetFullPath($Path)
   if (-not $fullPath.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
-      (Split-Path -Leaf $fullPath) -notlike "handy-audit-*") {
+      (Split-Path -Leaf $fullPath) -notlike "gigatype-audit-*") {
     throw "refusing to remove non-audit temporary directory: $fullPath"
   }
 
@@ -761,7 +779,7 @@ function Audit-Installers {
   )
   $results = @()
   foreach ($kind in @("nsis", "msi")) {
-    $root = Join-Path ([System.IO.Path]::GetTempPath()) ("handy-audit-" + [guid]::NewGuid().ToString("N"))
+    $root = Join-Path ([System.IO.Path]::GetTempPath()) ("gigatype-audit-" + [guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Path $root | Out-Null
     try {
       if ($kind -eq "nsis") {
@@ -773,13 +791,13 @@ function Audit-Installers {
       }
       if ($process.ExitCode -ne 0) { throw "$kind extraction exited $($process.ExitCode)" }
       $result = Assert-PackageRoot $root $PackageEdition $ExpectedRuntimeDirectory
-      $deviceProbe = Start-Process -FilePath $result.handy -ArgumentList "--list-devices" `
+      $deviceProbe = Start-Process -FilePath $result.executable -ArgumentList "--list-devices" `
         -Wait -PassThru -NoNewWindow
       if ($deviceProbe.ExitCode -ne 0) {
-        throw "$kind packaged handy.exe --list-devices exited $($deviceProbe.ExitCode)"
+        throw "$kind packaged $executableName --list-devices exited $($deviceProbe.ExitCode)"
       }
       if ($PackageEdition -eq "Cuda") {
-        $cudaProbe = Start-Process -FilePath $result.handy `
+        $cudaProbe = Start-Process -FilePath $result.executable `
           -ArgumentList @("--list-accelerators", "--json", "--ort-accelerator", "cuda") `
           -Wait -PassThru -NoNewWindow
         if ($cudaProbe.ExitCode -ne 0) {

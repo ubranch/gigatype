@@ -4,6 +4,15 @@ $entrypoint = Join-Path $PSScriptRoot "build-windows-cuda.ps1"
 if (-not (Test-Path -LiteralPath $entrypoint -PathType Leaf)) {
   throw "missing CUDA build entrypoint: $entrypoint"
 }
+$repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$appConfig = Get-Content -LiteralPath (Join-Path $repoRoot "src-tauri\tauri.conf.json") -Raw |
+  ConvertFrom-Json
+$productName = [string]$appConfig.productName
+$version = [string]$appConfig.version
+$executableName = "$productName.exe"
+if (-not $productName -or -not $version) {
+  throw "tauri.conf.json must define productName and version"
+}
 
 $helperModule = Join-Path $PSScriptRoot "windows-package-helpers.ps1"
 if (-not (Test-Path -LiteralPath $helperModule -PathType Leaf)) {
@@ -31,7 +40,7 @@ function Assert-ThrowsLike {
   }
 }
 
-$behaviorRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("handy-windows-helper-" + [guid]::NewGuid().ToString("N"))
+$behaviorRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("gigatype-windows-helper-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $behaviorRoot | Out-Null
 try {
   $missingArtifacts = Join-Path $behaviorRoot "missing"
@@ -42,37 +51,37 @@ try {
 
   $wrongArtifacts = Join-Path $behaviorRoot "wrong-version"
   New-Item -ItemType Directory -Path $wrongArtifacts | Out-Null
-  New-Item -ItemType File -Path (Join-Path $wrongArtifacts "Handy_0.9.30_x64-setup.exe") | Out-Null
+  New-Item -ItemType File -Path (Join-Path $wrongArtifacts "$($productName)_0.9.30_x64-setup.exe") | Out-Null
   Assert-ThrowsLike {
     Get-SingleVersionedArtifact -Directory $wrongArtifacts -Version "0.9.3" -Extension ".exe" -Label "NSIS"
   } "*exactly one current-version artifact*"
 
   $staleArtifacts = Join-Path $behaviorRoot "stale"
   New-Item -ItemType Directory -Path $staleArtifacts | Out-Null
-  New-Item -ItemType File -Path (Join-Path $staleArtifacts "Handy_0.9.3_x64-setup.exe") | Out-Null
-  New-Item -ItemType File -Path (Join-Path $staleArtifacts "Handy_0.9.2_x64-setup.exe") | Out-Null
+  New-Item -ItemType File -Path (Join-Path $staleArtifacts "$($productName)_0.9.3_x64-setup.exe") | Out-Null
+  New-Item -ItemType File -Path (Join-Path $staleArtifacts "$($productName)_0.9.2_x64-setup.exe") | Out-Null
   Assert-ThrowsLike {
     Get-SingleVersionedArtifact -Directory $staleArtifacts -Version "0.9.3" -Extension ".exe" -Label "NSIS"
   } "*exactly one current-version artifact*"
 
   $duplicateArtifacts = Join-Path $behaviorRoot "duplicate"
   New-Item -ItemType Directory -Path $duplicateArtifacts | Out-Null
-  New-Item -ItemType File -Path (Join-Path $duplicateArtifacts "Handy_0.9.3_x64-setup.exe") | Out-Null
-  New-Item -ItemType File -Path (Join-Path $duplicateArtifacts "Handy_0.9.3_x64-portable.exe") | Out-Null
+  New-Item -ItemType File -Path (Join-Path $duplicateArtifacts "$($productName)_0.9.3_x64-setup.exe") | Out-Null
+  New-Item -ItemType File -Path (Join-Path $duplicateArtifacts "$($productName)_0.9.3_x64-portable.exe") | Out-Null
   Assert-ThrowsLike {
     Get-SingleVersionedArtifact -Directory $duplicateArtifacts -Version "0.9.3" -Extension ".exe" -Label "NSIS"
   } "*exactly one current-version artifact*"
 
   $validArtifacts = Join-Path $behaviorRoot "valid"
   New-Item -ItemType Directory -Path $validArtifacts | Out-Null
-  $validName = "Handy_0.9.3_x64-setup.exe"
+  $validName = "$($productName)_0.9.3_x64-setup.exe"
   New-Item -ItemType File -Path (Join-Path $validArtifacts $validName) | Out-Null
   $artifact = Get-SingleVersionedArtifact -Directory $validArtifacts -Version "0.9.3" -Extension ".exe" -Label "NSIS"
   if ($artifact.Name -ne $validName) { throw "valid current-version artifact was not returned" }
 
   $validMsiArtifacts = Join-Path $behaviorRoot "valid-msi"
   New-Item -ItemType Directory -Path $validMsiArtifacts | Out-Null
-  $validMsiName = "Handy_0.9.3_x64_en-US.msi"
+  $validMsiName = "$($productName)_0.9.3_x64_en-US.msi"
   New-Item -ItemType File -Path (Join-Path $validMsiArtifacts $validMsiName) | Out-Null
   $msiArtifact = Get-SingleVersionedArtifact -Directory $validMsiArtifacts -Version "0.9.3" -Extension ".msi" -Label "MSI"
   if ($msiArtifact.Name -ne $validMsiName) { throw "valid current-version MSI artifact was not returned" }
@@ -122,13 +131,39 @@ try {
   $tempRoot = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
   $resolvedBehaviorRoot = [System.IO.Path]::GetFullPath($behaviorRoot)
   if (-not $resolvedBehaviorRoot.StartsWith($tempRoot, [System.StringComparison]::OrdinalIgnoreCase) -or
-    (Split-Path -Leaf $resolvedBehaviorRoot) -notlike "handy-windows-helper-*") {
+    (Split-Path -Leaf $resolvedBehaviorRoot) -notlike "gigatype-windows-helper-*") {
     throw "refusing to remove unexpected helper-test path: $resolvedBehaviorRoot"
   }
   Remove-Item -LiteralPath $resolvedBehaviorRoot -Recurse -Force
 }
 
 $entrypointSource = Get-Content -LiteralPath $entrypoint -Raw
+if ([regex]::Matches($entrypointSource, 'src-tauri\\tauri\.conf\.json').Count -ne 1) {
+  throw "CUDA build entrypoint must read tauri.conf.json exactly once"
+}
+foreach ($requiredMetadataContract in @(
+  '$productName = [string]$appConfig.productName',
+  '$version = [string]$appConfig.version',
+  '$executableName = "$productName.exe"',
+  'Filter $executableName',
+  'executable = $executable.FullName',
+  '"$($productName)_${version}_x64-setup.exe"',
+  '"$($productName)_${version}_x64_en-US.msi"',
+  '"$($productName)_${version}_x64-cuda13-setup.exe"',
+  '"$($productName)_${version}_x64-cuda13_en-US.msi"'
+)) {
+  if (-not $entrypointSource.Contains($requiredMetadataContract)) {
+    throw "CUDA build entrypoint is missing product metadata contract: $requiredMetadataContract"
+  }
+}
+if ($entrypointSource -match 'Filter\s+"handy\.exe"' -or
+    $entrypointSource -match '"Handy_\$\{version\}') {
+  throw "CUDA build entrypoint must not hardcode Handy package identity"
+}
+if ($entrypointSource -notmatch 'gigatype-cuda-build' -or
+    $entrypointSource -notmatch 'gigatype-audit-') {
+  throw "CUDA build entrypoint must use GigaType cache and audit prefixes"
+}
 if ($entrypointSource -match '\$LASTEXITCODE') {
   throw "CUDA build entrypoint must use explicit Process.ExitCode; LASTEXITCODE is unset in WSL-launched PowerShell 7.6"
 }
@@ -197,10 +232,10 @@ function Assert-ModelWeightRejected {
   )
 
   $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
-  $root = Join-Path $tempBase ("handy-package-audit-" + [guid]::NewGuid().ToString("N"))
+  $root = Join-Path $tempBase ("gigatype-package-audit-" + [guid]::NewGuid().ToString("N"))
   New-Item -ItemType Directory -Path $root | Out-Null
   try {
-    New-Item -ItemType File -Path (Join-Path $root "handy.exe") | Out-Null
+    New-Item -ItemType File -Path (Join-Path $root $executableName) | Out-Null
     New-Item -ItemType File -Path (Join-Path $root $FileName) | Out-Null
     try {
       $null = & $entrypoint -Mode Audit -Edition $Edition -PackageRoot $root -Json
@@ -213,7 +248,7 @@ function Assert-ModelWeightRejected {
   } finally {
     $resolvedRoot = [System.IO.Path]::GetFullPath($root)
     if (-not $resolvedRoot.StartsWith($tempBase, [System.StringComparison]::OrdinalIgnoreCase) -or
-      (Split-Path -Leaf $resolvedRoot) -notlike "handy-package-audit-*") {
+      (Split-Path -Leaf $resolvedRoot) -notlike "gigatype-package-audit-*") {
       throw "refusing to remove unexpected package-audit test path: $resolvedRoot"
     }
     Remove-Item -LiteralPath $resolvedRoot -Recurse -Force
@@ -224,10 +259,10 @@ function Assert-CpuOrtLicenseRequired {
   param([Parameter(Mandatory)][string]$MissingName)
 
   $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
-  $root = Join-Path $tempBase ("handy-package-license-" + [guid]::NewGuid().ToString("N"))
+  $root = Join-Path $tempBase ("gigatype-package-license-" + [guid]::NewGuid().ToString("N"))
   New-Item -ItemType Directory -Path $root | Out-Null
   try {
-    New-Item -ItemType File -Path (Join-Path $root "handy.exe") | Out-Null
+    New-Item -ItemType File -Path (Join-Path $root $executableName) | Out-Null
     foreach ($name in @("onnxruntime-LICENSE.txt", "onnxruntime-ThirdPartyNotices.txt")) {
       if ($name -ne $MissingName) {
         New-Item -ItemType File -Path (Join-Path $root $name) | Out-Null
@@ -244,7 +279,7 @@ function Assert-CpuOrtLicenseRequired {
   } finally {
     $resolvedRoot = [System.IO.Path]::GetFullPath($root)
     if (-not $resolvedRoot.StartsWith($tempBase, [System.StringComparison]::OrdinalIgnoreCase) -or
-      (Split-Path -Leaf $resolvedRoot) -notlike "handy-package-license-*") {
+      (Split-Path -Leaf $resolvedRoot) -notlike "gigatype-package-license-*") {
       throw "refusing to remove unexpected package-license test path: $resolvedRoot"
     }
     Remove-Item -LiteralPath $resolvedRoot -Recurse -Force
@@ -260,13 +295,13 @@ function Assert-CpuPackageRejected {
   )
 
   $tempBase = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath())
-  $fixtureRoot = Join-Path $tempBase ("handy-cpu-package-behavior-" + [guid]::NewGuid().ToString("N"))
+  $fixtureRoot = Join-Path $tempBase ("gigatype-cpu-package-behavior-" + [guid]::NewGuid().ToString("N"))
   $packageRoot = Join-Path $fixtureRoot "package"
   $stagedRoot = Join-Path $fixtureRoot "expected-staging"
   New-Item -ItemType Directory -Path $packageRoot, $stagedRoot | Out-Null
   try {
     foreach ($name in @(
-      "handy.exe",
+      $executableName,
       "onnxruntime-LICENSE.txt",
       "onnxruntime-ThirdPartyNotices.txt"
     )) {
@@ -294,7 +329,7 @@ function Assert-CpuPackageRejected {
   } finally {
     $resolvedFixtureRoot = [System.IO.Path]::GetFullPath($fixtureRoot)
     if (-not $resolvedFixtureRoot.StartsWith($tempBase, [System.StringComparison]::OrdinalIgnoreCase) -or
-      (Split-Path -Leaf $resolvedFixtureRoot) -notlike "handy-cpu-package-behavior-*") {
+      (Split-Path -Leaf $resolvedFixtureRoot) -notlike "gigatype-cpu-package-behavior-*") {
       throw "refusing to remove unexpected CPU package fixture path: $resolvedFixtureRoot"
     }
     Remove-Item -LiteralPath $resolvedFixtureRoot -Recurse -Force
@@ -347,6 +382,14 @@ if ($LASTEXITCODE -ne 0) {
 $plan = $planJson | ConvertFrom-Json
 
 if ($plan.edition -ne "cuda13") { throw "unexpected edition: $($plan.edition)" }
+if ($plan.product_name -ne $productName -or $plan.version -ne $version -or
+    $plan.executable -ne $executableName) {
+  throw "CUDA build plan does not expose tauri product metadata"
+}
+if ($plan.artifacts.nsis -ne "GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe" -or
+    $plan.artifacts.msi -ne "GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi") {
+  throw "unexpected CUDA release artifact names"
+}
 if ($plan.ort.version -ne "1.24.2") { throw "unexpected ORT version" }
 if ($plan.ort.asset -ne "onnxruntime-win-x64-gpu_cuda13-1.24.2.zip") {
   throw "unexpected ORT asset"
@@ -383,6 +426,10 @@ if ($LASTEXITCODE -ne 0) {
 }
 $cpuPlan = $cpuPlanJson | ConvertFrom-Json
 if ($cpuPlan.edition -ne "cpu") { throw "unexpected CPU edition: $($cpuPlan.edition)" }
+if ($cpuPlan.artifacts.nsis -ne "GigaType_0.9.3-gigatype.1_x64-setup.exe" -or
+    $cpuPlan.artifacts.msi -ne "GigaType_0.9.3-gigatype.1_x64_en-US.msi") {
+  throw "unexpected CPU release artifact names"
+}
 if ($cpuPlan.ort.asset -ne "onnxruntime-win-x64-1.24.2.zip") {
   throw "CPU edition must use the CPU-only ORT asset"
 }

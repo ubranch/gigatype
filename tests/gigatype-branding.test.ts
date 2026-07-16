@@ -176,4 +176,23 @@ describe("GigaType branding contract", () => {
     expect(logo).toContain("height={24}");
     expect(logo).not.toContain('width="28%"');
   });
+
+  test("build tooling derives GigaType artifacts", () => {
+    const build = read("scripts/build-windows-cuda.ps1");
+    const verify = read("scripts/verify-windows-cuda.ps1");
+    const workflow = read(".github/workflows/build.yml");
+
+    expect(build).toContain("$productName");
+    expect(build).toContain("$executableName");
+    expect(verify).toContain("$productName");
+    expect(verify).toContain("$executableName");
+    expect(build).not.toContain('Filter "handy.exe"');
+    expect(verify).not.toContain('Filter "handy.exe"');
+    expect(build).not.toContain('"Handy_${version}');
+    expect(verify).not.toContain('"Handy_${version}');
+    expect(workflow).toContain('default: "gigatype"');
+    expect(workflow).toContain("$appExecutable");
+    expect(workflow).toContain("AppUnderTest.AppImage");
+    expect(workflow).not.toContain("Handy.AppImage");
+  });
 });

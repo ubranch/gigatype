@@ -2,8 +2,8 @@
 param(
   [ValidateSet("Plan", "Verify", "All")]
   [string]$Mode = "All",
-  [string]$CacheRoot = (Join-Path $env:LOCALAPPDATA "handy-cuda-verify"),
-  [string]$BuildCacheRoot = (Join-Path $env:LOCALAPPDATA "handy-cuda-build"),
+  [string]$CacheRoot = (Join-Path $env:LOCALAPPDATA "gigatype-cuda-verify"),
+  [string]$BuildCacheRoot = (Join-Path $env:LOCALAPPDATA "gigatype-cuda-build"),
   [string]$EvidenceDir,
   [string]$Nsis,
   [string]$Msi,
@@ -17,6 +17,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$appConfig = Get-Content -LiteralPath (Join-Path $repoRoot "src-tauri\tauri.conf.json") -Raw |
+  ConvertFrom-Json
+$productName = [string]$appConfig.productName
+$version = [string]$appConfig.version
+$executableName = "$productName.exe"
+if (-not $productName -or -not $version) {
+  throw "tauri.conf.json must define productName and version"
+}
 $CacheRoot = [System.IO.Path]::GetFullPath($CacheRoot)
 $BuildCacheRoot = [System.IO.Path]::GetFullPath($BuildCacheRoot)
 if (-not $EvidenceDir) {
@@ -76,9 +84,17 @@ $models = @(
     )
   }
 )
+$artifactNames = [ordered]@{
+  nsis = "$($productName)_${version}_x64-cuda13-setup.exe"
+  msi = "$($productName)_${version}_x64-cuda13_en-US.msi"
+}
 
 $plan = [ordered]@{
+  product_name = $productName
+  version = $version
+  executable = $executableName
   edition = "windows-x64-cuda13"
+  artifacts = $artifactNames
   repeat = $Repeat
   max_wer = 0.50
   max_cuda_wer_regression = 0.02
@@ -346,19 +362,19 @@ function Expand-Packages {
 
   $packages = @()
   foreach ($item in @(@("nsis", $nsisRoot), @("msi", $msiRoot))) {
-    $handy = Get-ChildItem -LiteralPath $item[1] -Filter "handy.exe" -File -Recurse |
+    $executable = Get-ChildItem -LiteralPath $item[1] -Filter $executableName -File -Recurse |
       Select-Object -First 1
-    if (-not $handy) { throw "$($item[0]) extraction is missing handy.exe" }
-    Set-Content -LiteralPath (Join-Path $handy.DirectoryName "portable") `
-      -Value "Handy Portable Mode" -Encoding ascii -NoNewline
-    New-Item -ItemType Directory -Path (Join-Path $handy.DirectoryName "Data\models") -Force |
+    if (-not $executable) { throw "$($item[0]) extraction is missing $executableName" }
+    Set-Content -LiteralPath (Join-Path $executable.DirectoryName "portable") `
+      -Value "$productName Portable Mode" -Encoding ascii -NoNewline
+    New-Item -ItemType Directory -Path (Join-Path $executable.DirectoryName "Data\models") -Force |
       Out-Null
     $packages += [pscustomobject]@{
       kind = $item[0]
       root = $item[1]
-      exe_dir = $handy.DirectoryName
-      handy = $handy.FullName
-      data = Join-Path $handy.DirectoryName "Data"
+      exe_dir = $executable.DirectoryName
+      executable = $executable.FullName
+      data = Join-Path $executable.DirectoryName "Data"
     }
   }
   return $packages
@@ -380,13 +396,13 @@ function Test-PackageLaunch {
     [Parameter(Mandatory)]$Package,
     [Parameter(Mandatory)][string]$LogRoot
   )
-  $devices = Invoke-CapturedProcess $Package.handy @("--list-devices") `
+  $devices = Invoke-CapturedProcess $Package.executable @("--list-devices") `
     (Join-Path $LogRoot "$($Package.kind)-devices") @{} 120
   if ($devices.exit_code -ne 0) {
     throw "$($Package.kind) --list-devices exited $($devices.exit_code): $($devices.stderr)"
   }
 
-  $diagnostics = Invoke-CapturedProcess $Package.handy @(
+  $diagnostics = Invoke-CapturedProcess $Package.executable @(
     "--list-accelerators", "--json", "--ort-accelerator", "cuda"
   ) (Join-Path $LogRoot "$($Package.kind)-cuda-diagnostics") `
     @{ RUST_LOG = "info"; ORT_LOG = "info" } 120
@@ -446,7 +462,7 @@ function Test-MissingProviderFailure {
     [Parameter(Mandatory)][string]$LogRoot
   )
   Copy-HardLinkedTree $Package.root $NegativeRoot
-  $negativeExe = Get-ChildItem -LiteralPath $NegativeRoot -Filter "handy.exe" -File -Recurse |
+  $negativeExe = Get-ChildItem -LiteralPath $NegativeRoot -Filter $executableName -File -Recurse |
     Select-Object -First 1
   $negativeProvider = Get-ChildItem -LiteralPath $negativeRoot `
     -Filter "onnxruntime_providers_cuda.dll" -File -Recurse | Select-Object -First 1
@@ -603,7 +619,7 @@ function Invoke-Benchmark {
     [switch]$MonitorVram
   )
   $prefix = Join-Path $LogRoot "$($Model.id)-$Accelerator"
-  $run = Start-CapturedProcess $Package.handy @(
+  $run = Start-CapturedProcess $Package.executable @(
     "--transcribe-file", $Fixture.wav_path,
     "--model", $Model.id,
     "--ort-accelerator", $Accelerator,
@@ -647,7 +663,7 @@ function Invoke-Benchmark {
     throw "$($Model.id) CUDA run lacks provider registration proof"
   }
   if ($MonitorVram -and (-not $bestVram -or $bestVram.used_memory_mb -le 0)) {
-    throw "nvidia-smi did not observe non-zero VRAM for exact Handy PID $($result.pid)"
+    throw "nvidia-smi did not observe non-zero VRAM for exact $productName PID $($result.pid)"
   }
 
   $reference = Normalize-Transcript $Fixture.reference
@@ -689,10 +705,8 @@ if ($Mode -eq "All") {
   $buildSucceeded = $?
   if (-not $buildSucceeded) { throw "native Windows CUDA build/audit failed" }
   if ($buildOutput.Count -eq 0) { throw "native Windows CUDA build returned no summary" }
-  $version = (Get-Content -LiteralPath (Join-Path $repoRoot "src-tauri\tauri.conf.json") -Raw |
-    ConvertFrom-Json).version
-  $Nsis = Join-Path $repoRoot "dist\windows-cuda\Handy_${version}_x64-cuda13-setup.exe"
-  $Msi = Join-Path $repoRoot "dist\windows-cuda\Handy_${version}_x64-cuda13_en-US.msi"
+  $Nsis = Join-Path $repoRoot (Join-Path "dist\windows-cuda" $artifactNames.nsis)
+  $Msi = Join-Path $repoRoot (Join-Path "dist\windows-cuda" $artifactNames.msi)
 }
 if (-not $Nsis -or -not $Msi) { throw "Verify mode requires -Nsis and -Msi" }
 $Nsis = [System.IO.Path]::GetFullPath($Nsis)
