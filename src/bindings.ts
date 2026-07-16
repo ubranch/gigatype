@@ -359,14 +359,6 @@ async changeAppLanguageSetting(language: string) : Promise<Result<null, string>>
     else return { status: "error", error: e  as any };
 }
 },
-async changeUpdateChecksSetting(enabled: boolean) : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("change_update_checks_setting", { enabled }) };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
 async changeShowWhatsNewOnUpdateSetting(enabled: boolean) : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("change_show_whats_new_on_update_setting", { enabled }) };
@@ -463,14 +455,6 @@ async startHandyKeysRecording(bindingId: string) : Promise<Result<null, string>>
 async stopHandyKeysRecording() : Promise<Result<null, string>> {
     try {
     return { status: "ok", data: await TAURI_INVOKE("stop_handy_keys_recording") };
-} catch (e) {
-    if(e instanceof Error) throw e;
-    else return { status: "error", error: e  as any };
-}
-},
-async triggerUpdateCheck() : Promise<Result<null, string>> {
-    try {
-    return { status: "ok", data: await TAURI_INVOKE("trigger_update_check") };
 } catch (e) {
     if(e instanceof Error) throw e;
     else return { status: "error", error: e  as any };
@@ -846,10 +830,8 @@ async updateRecordingRetentionPeriod(period: string) : Promise<Result<null, stri
 }
 },
 /**
- * Checks if the Mac is a laptop by detecting battery presence
- * 
- * This uses pmset to check for battery information.
- * Returns true if a battery is detected (laptop), false otherwise (desktop)
+ * Stub implementation for non-macOS platforms
+ * Always returns false since laptop detection is macOS-specific
  */
 async isLaptop() : Promise<Result<boolean, string>> {
     try {
@@ -898,7 +880,7 @@ settings_schema_version?: number;
  * Defaults to empty on partial stores; the load path merges in the
  * default bindings for any missing keys before the settings are used.
  */
-bindings?: Partial<{ [key in string]: ShortcutBinding }>; push_to_talk?: boolean; audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; update_checks_enabled?: boolean; show_whats_new_on_update?: boolean; 
+bindings?: Partial<{ [key in string]: ShortcutBinding }>; push_to_talk?: boolean; audio_feedback?: boolean; audio_feedback_volume?: number; sound_theme?: SoundTheme; start_hidden?: boolean; autostart_enabled?: boolean; show_whats_new_on_update?: boolean;
 /**
  * The app version whose What's New the user has already seen. Fresh installs
  * default to the current version (nothing is "new" to them). Existing users
@@ -928,6 +910,10 @@ export type EngineType =
 export type GpuDeviceOption = { id: number; name: string; total_vram_mb: number }
 export type HistoryEntry = { id: number; file_name: string; timestamp: number; saved: boolean; title: string; transcription_text: string; post_processed_text: string | null; post_process_prompt: string | null; post_process_requested: boolean }
 export type HistoryUpdatePayload = { action: "added"; entry: HistoryEntry } | { action: "updated"; entry: HistoryEntry } | { action: "deleted"; id: number } | { action: "toggled"; id: number }
+/**
+ * Where a model comes from and how Handy obtains it — the routing discriminant
+ * for downloading and on-disk resolution.
+ */
 export type HuggingFaceBundleFile = { remote_filename: string; local_filename: string; size_bytes: number; sha256: string }
 /**
  * Result of changing keyboard implementation
@@ -942,10 +928,6 @@ export type LLMPrompt = { id: string; name: string; prompt: string }
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error"
 export type ModelInfo = { id: string; name: string; description: string; filename: string; source: ModelSource; size_mb: number; is_downloaded: boolean; is_downloading: boolean; partial_size: number; is_directory: boolean; engine_type: EngineType; accuracy_score: number; speed_score: number; supports_translation: boolean; is_recommended: boolean; supported_languages: string[]; supports_language_selection: boolean; is_custom: boolean; supports_streaming: boolean; supports_language_detection: boolean }
 export type ModelLoadStatus = { is_loaded: boolean; current_model: string | null }
-/**
- * Where a model comes from and how Handy obtains it — the routing discriminant
- * for downloading and on-disk resolution.
- */
 export type ModelSource = 
 /**
  * Direct HTTP download from a URL (current blob.handy.computer hosting).
@@ -972,8 +954,8 @@ sha256: string | null } } |
  */
 "Local"
 export type ModelUnloadTimeout = "never" | "immediately" | "min_2" | "min_5" | "min_10" | "min_15" | "hour_1" | "sec_15"
-export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OrtAcceleratorDiagnostic = { id: string; compiled: boolean; usable: boolean; reason: string | null }
+export type OrtAcceleratorSetting = "auto" | "cpu" | "cuda" | "directml" | "rocm"
 export type OverlayPosition = "top" | "bottom"
 /**
  * Which recording overlay to display. `Minimal` and `Live` share one base

@@ -9,7 +9,7 @@ pub enum CliOrtAccelerator {
 }
 
 #[derive(Parser, Debug, Clone, Default)]
-#[command(name = "handy", about = "Handy - Speech to Text")]
+#[command(name = "gigatype", about = "GigaType - Speech to Text")]
 pub struct CliArgs {
     /// Start with the main window hidden
     #[arg(long)]
@@ -85,7 +85,7 @@ mod tests {
     #[test]
     fn parses_headless_ort_accelerator_override() {
         let args = CliArgs::try_parse_from([
-            "handy",
+            "gigatype",
             "--list-accelerators",
             "--ort-accelerator",
             "cuda",
@@ -101,7 +101,7 @@ mod tests {
     #[test]
     fn rejects_unknown_ort_accelerator_with_usage_exit_code() {
         let error = CliArgs::try_parse_from([
-            "handy",
+            "gigatype",
             "--list-accelerators",
             "--ort-accelerator",
             "vulkan",
