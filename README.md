@@ -1,6 +1,6 @@
 # gigatype
 
-> private, unofficial fork of cjpais/handy. gigatype preserves upstream mit attribution and adds gigaam multilingual plus verified windows cuda packaging. it is not endorsed by or affiliated with upstream handy.
+> private, unofficial fork of `cjpais/Handy`. gigatype preserves upstream mit attribution and adds gigaam multilingual plus verified windows cuda packaging. it is not endorsed by or affiliated with upstream handy.
 
 gigatype is a local desktop speech-to-text application: press a shortcut, speak, and paste the transcription into the focused text field. version `0.9.3-gigatype.1` targets separate cpu and nvidia cuda 13 packages for windows x64.
 
