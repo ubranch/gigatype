@@ -99,6 +99,10 @@ if ($violations) { throw "uppercase README prose remains:`n$($violations -join "
 
 $readme = Get-Content -Raw README.md
 $required = @(
+  'MiB',
+  'GiB',
+  '220M',
+  '600M',
   'GigaType_0.9.3-gigatype.1_x64-setup.exe',
   'GigaType_0.9.3-gigatype.1_x64_en-US.msi',
   'GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe',
@@ -109,10 +113,13 @@ $required = @(
 foreach ($token in $required) {
   if (-not $readme.Contains($token)) { throw "missing preserved token: $token" }
 }
-if (rg -n --glob '*.md' 'https://github\.com/ubranch/GigaType' .) {
+$legacyUrls = git grep -n 'https://github\.com/ubranch/GigaType' -- '*.md'
+if ($LASTEXITCODE -eq 0) {
   throw 'uppercase canonical repository URL remains'
 }
-rg -n --glob '*.md' 'https://github\.com/ubranch/gigatype' .
+if ($LASTEXITCODE -ne 1) { throw "canonical URL check failed: $LASTEXITCODE" }
+$canonicalUrls = git grep -n 'https://github\.com/ubranch/gigatype' -- '*.md'
+if ($LASTEXITCODE -ne 0) { throw "lowercase canonical URL check failed: $LASTEXITCODE" }
 git diff --check
 ```
 
@@ -121,13 +128,28 @@ Expected: no exception; tracked Markdown contains lowercase canonical repository
 - [ ] **Step 4: Review and commit documentation**
 
 ```powershell
-git diff -- README.md BUILD.md AGENTS.md
-git add README.md BUILD.md AGENTS.md
+$task1Files = @(
+  'README.md',
+  'BUILD.md',
+  'AGENTS.md',
+  '.github/PULL_REQUEST_TEMPLATE.md',
+  '.github/ISSUE_TEMPLATE/bug_report.md',
+  'src/content/release-notes/0.9.0.md',
+  'docs/superpowers/plans/2026-07-16-gigatype-private-fork.md',
+  'docs/superpowers/specs/2026-07-16-gigatype-private-fork-design.md'
+)
+git diff -- $task1Files
+git add -- $task1Files
+$staged = @(git diff --cached --name-only | Sort-Object)
+$expected = @($task1Files | Sort-Object)
+if (Compare-Object -ReferenceObject $expected -DifferenceObject $staged) {
+  throw 'staged file list differs from the Task 1 allowlist'
+}
 git diff --cached --check
 git commit -m "docs: lowercase repository surface"
 ```
 
-Expected: commit contains only `README.md`, `BUILD.md`, and `AGENTS.md`.
+Expected: commit contains only the eight Task 1 files in `$task1Files`.
 
 ---
 
