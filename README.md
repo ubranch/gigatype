@@ -139,7 +139,7 @@ Get-ChildItem (Join-Path $env:USERPROFILE "Downloads\GigaType_0.9.3-gigatype.1_x
 
 ## build from source
 
-see [build.md](BUILD.md) for exact prerequisites, clone commands, pinned runtime inputs, cpu/cuda package gates, and output paths. source development remains cross-platform, but `0.9.3-gigatype.1` targets packaged releases only for windows x64 when published.
+see [`BUILD.md`](BUILD.md) for exact prerequisites, clone commands, pinned runtime inputs, cpu/cuda package gates, and output paths. source development remains cross-platform, but `0.9.3-gigatype.1` targets packaged releases only for windows x64 when published.
 
 ## repository layout
 
