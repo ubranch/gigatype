@@ -4,7 +4,7 @@
 
 **Goal:** Rename the private GitHub repository to `ubranch/gigatype` and make its README prose, description, and topics lowercase without changing released technical contracts.
 
-**Architecture:** Apply one mechanical Markdown transformation that lowercases README text outside fenced code, inline code, and link destinations. Patch required repository URLs explicitly, push documentation before the GitHub rename, then update GitHub metadata and verify the existing release remains byte-for-byte unchanged.
+**Architecture:** Apply one mechanical Markdown transformation that lowercases README text outside fenced code, inline code, and link destinations. Normalize every tracked Markdown canonical repository URL, push documentation before the GitHub rename, then update GitHub metadata and verify the existing release remains byte-for-byte unchanged.
 
 **Tech Stack:** PowerShell 7, Git, GitHub CLI, Markdown
 
@@ -25,10 +25,15 @@
 - Modify: `README.md`
 - Modify: `BUILD.md`
 - Modify: `AGENTS.md`
+- Modify: `.github/PULL_REQUEST_TEMPLATE.md`
+- Modify: `.github/ISSUE_TEMPLATE/bug_report.md`
+- Modify: `src/content/release-notes/0.9.0.md`
+- Modify: `docs/superpowers/plans/2026-07-16-gigatype-private-fork.md`
+- Modify: `docs/superpowers/specs/2026-07-16-gigatype-private-fork-design.md`
 
 **Interfaces:**
 - Consumes: approved design in `docs/superpowers/specs/2026-07-17-lowercase-repository-surface-design.md`
-- Produces: lowercase README prose plus lowercase canonical repository URLs
+- Produces: lowercase README prose plus lowercase canonical repository URLs across tracked Markdown
 
 - [ ] **Step 1: Run the README casing validator and verify it fails**
 
@@ -77,20 +82,7 @@ $result = foreach ($line in $lines) {
 )
 ```
 
-Apply these exact URL edits with `apply_patch`:
-
-```diff
---- a/AGENTS.md
-+++ b/AGENTS.md
-@@
--- repository: `https://github.com/ubranch/GigaType.git`
-+- repository: `https://github.com/ubranch/gigatype.git`
---- a/BUILD.md
-+++ b/BUILD.md
-@@
--git clone https://github.com/ubranch/GigaType.git
-+git clone https://github.com/ubranch/gigatype.git
-```
+Use `apply_patch` to normalize every tracked Markdown canonical repository URL to `https://github.com/ubranch/gigatype`, retaining historical prose and branding.
 
 - [ ] **Step 3: Validate lowercase prose and preserved contracts**
 
@@ -117,14 +109,14 @@ $required = @(
 foreach ($token in $required) {
   if (-not $readme.Contains($token)) { throw "missing preserved token: $token" }
 }
-if (rg -n 'github\.com/ubranch/GigaType' README.md BUILD.md AGENTS.md) {
-  throw 'uppercase repository URL remains'
+if (rg -n --glob '*.md' 'https://github\.com/ubranch/GigaType' .) {
+  throw 'uppercase canonical repository URL remains'
 }
-rg -n 'github\.com/ubranch/gigatype' BUILD.md AGENTS.md
+rg -n --glob '*.md' 'https://github\.com/ubranch/gigatype' .
 git diff --check
 ```
 
-Expected: no exception; two lowercase repository URL matches; `git diff --check` exits `0`.
+Expected: no exception; tracked Markdown contains lowercase canonical repository URLs only; `git diff --check` exits `0`.
 
 - [ ] **Step 4: Review and commit documentation**
 

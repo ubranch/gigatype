@@ -8,7 +8,7 @@ assignees: ""
 
 ## Before You Submit
 
-**Please search [existing issues](https://github.com/ubranch/GigaType/issues) to avoid duplicates.** Your bug may already be reported.
+**Please search [existing issues](https://github.com/ubranch/gigatype/issues) to avoid duplicates.** Your bug may already be reported.
 
 ## Bug Description
 

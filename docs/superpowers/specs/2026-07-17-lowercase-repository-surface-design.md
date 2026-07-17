@@ -10,7 +10,7 @@ make the private github repository surface lowercase while preserving exact tech
 - lowercase the github repository description
 - add lowercase topics: `speech-to-text`, `windows`, `cuda`, `gigaam`, `tauri`, and `rust`
 - lowercase README prose and headings
-- update repository URLs in `README.md`, `BUILD.md`, and `AGENTS.md`
+- update every tracked Markdown canonical repository URL to `https://github.com/ubranch/gigatype`, including documentation, templates, and release notes
 - update the local `private` remote after the github rename
 
 ## preserved contracts
@@ -35,5 +35,5 @@ make the private github repository surface lowercase while preserving exact tech
 - description and all repository topics are lowercase
 - README prose and headings are lowercase
 - exact filenames, commands, hashes, and identifiers remain correct
-- repository URL references use `https://github.com/ubranch/gigatype`
+- every tracked Markdown canonical repository URL uses `https://github.com/ubranch/gigatype`
 - release `v0.9.3-gigatype.1` still points to the same commit and retains four verified assets

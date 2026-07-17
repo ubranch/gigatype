@@ -14,7 +14,7 @@ The fork is Windows-first for this release. Existing macOS and Linux source supp
 
 - GitHub repository: private `ubranch/GigaType`.
 - Existing `origin` remains `https://github.com/cjpais/Handy.git` for upstream comparison and future merges.
-- New remote is named `private` and points to `https://github.com/ubranch/GigaType.git`.
+- New remote is named `private` and points to `https://github.com/ubranch/gigatype.git`.
 - Work is committed on `agent/gigatype-private-fork`, then pushed as the new repository's `main` branch.
 - The empty private repository receives a direct initial push; no synthetic pull request is created.
 - The friend receives least-privilege read access after their GitHub username is provided; write access is out of scope unless separately requested.

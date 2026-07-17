@@ -42,6 +42,3 @@ blob-report/
 
 # Nix build output
 result
-
-# Agent worktrees
-.worktrees/

@@ -8,7 +8,7 @@ Windows x64 is the only packaged release target. macOS and Linux remain supporte
 
 ```powershell
 git clone https://github.com/ubranch/gigatype.git
-cd GigaType
+cd gigatype
 ```
 
 the package, Cargo, and Tauri versions must all remain `0.9.3-gigatype.1`. `src-tauri/tauri.conf.json` is the package scripts' source of truth for `productName`, version, executable name, and artifact names.

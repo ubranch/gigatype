@@ -54,10 +54,10 @@ the first model selection needs network access because model weights are not emb
 
 | model                                | intended use                                                                        |                                 download size |
 | ------------------------------------ | ----------------------------------------------------------------------------------- | --------------------------------------------: |
-| `GigaAM Multilingual 220M INT8`      | recommended cpu model                                                               |                 about 214 mib plus vocabulary |
-| `GigaAM Multilingual 220M FP32 CUDA` | recommended balanced gpu model                                                      |                 about 844 mib plus vocabulary |
-| `GigaAM Multilingual 600M INT8`      | larger cpu model; use only when its extra memory and processing cost are acceptable |                 about 564 mib plus vocabulary |
-| `GigaAM Multilingual 600M FP32 CUDA` | recommended rtx 5080 model                                                          | about 2.18 gib plus onnx graph and vocabulary |
+| `GigaAM Multilingual 220M INT8`      | recommended cpu model                                                               |                 about 214 `MiB` plus vocabulary |
+| `GigaAM Multilingual 220M FP32 CUDA` | recommended balanced gpu model                                                      |                 about 844 `MiB` plus vocabulary |
+| `GigaAM Multilingual 600M INT8`      | larger cpu model; use only when its extra memory and processing cost are acceptable |                 about 564 `MiB` plus vocabulary |
+| `GigaAM Multilingual 600M FP32 CUDA` | recommended rtx 5080 model                                                          | about 2.18 `GiB` plus onnx graph and vocabulary |
 
 all four are multilingual ctc models for `uz`, `kk`, `ky`, `ru`, and `en`. `220M INT8` is the default recommendation for cpu use; `220M FP32 CUDA` balances gpu download size and model capacity; `600M FP32 CUDA` is the rtx 5080 recommendation.
 
@@ -99,8 +99,8 @@ recording, vad, gigaam inference, history, and paste run on the local computer. 
 
 model weights download separately from pinned hugging face repositories. gigatype verifies every declared bundle file by expected size and sha256 before materializing it:
 
-- `istupakov/gigaam-multilingual-ctc-onnx` at revision `458860e1983aef670dd9795fb6af603c82767d5d` for both 220m choices
-- `istupakov/gigaam-multilingual-large-ctc-onnx` at revision `07665ab5e54371dd1ac7b8b10f06478003723573` for both 600m choices
+- `istupakov/gigaam-multilingual-ctc-onnx` at revision `458860e1983aef670dd9795fb6af603c82767d5d` for both `220M` choices
+- `istupakov/gigaam-multilingual-large-ctc-onnx` at revision `07665ab5e54371dd1ac7b8b10f06478003723573` for both `600M` choices
 
 after a model is downloaded and verified, transcription can run without network access. deleting gigatype's app-data model directory requires downloading the files again; use the app's about/debug view to locate the exact app-data directory.
 

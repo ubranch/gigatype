@@ -14,7 +14,7 @@
 - Product name is `GigaType`; repository is private `ubranch/GigaType`.
 - Release version is `0.9.3-gigatype.1`; release tag is `v0.9.3-gigatype.1`.
 - Bundle identifier is `io.github.ubranch.gigatype`.
-- Existing `origin` stays `https://github.com/cjpais/Handy.git`; add `private` for `https://github.com/ubranch/GigaType.git`.
+- Existing `origin` stays `https://github.com/cjpais/Handy.git`; add `private` for `https://github.com/ubranch/gigatype.git`.
 - Public surfaces use GigaType; internal `HandyKeys`, historical attribution, dependency URLs, and upstream references may retain their exact names.
 - Remove upstream signing and automatic updater integration; releases remain unsigned and private.
 - Release only Windows x64 CPU and NVIDIA CUDA 13 packages; macOS/Linux source support remains without release proof.
@@ -301,9 +301,9 @@ test("uses independent user-facing visuals and links", () => {
   );
   expect(sidebar).toContain("GigaTypeLogo");
   expect(sidebar).toContain("GigaTypeMark");
-  expect(about).toContain("https://github.com/ubranch/GigaType");
+  expect(about).toContain("https://github.com/ubranch/gigatype");
   expect(about).not.toContain("handy.computer/donate");
-  expect(headers).toContain("https://github.com/ubranch/GigaType");
+  expect(headers).toContain("https://github.com/ubranch/gigatype");
 });
 ```
 
@@ -427,9 +427,9 @@ Expected: Tauri regenerates PNG, ICO, ICNS, iOS, and Android icon assets from th
 
 Apply exact values:
 
-- About source URL: `https://github.com/ubranch/GigaType`; remove upstream donation button/handler.
+- About source URL: `https://github.com/ubranch/gigatype`; remove upstream donation button/handler.
 - Debug keyboard label: `Native Keys`; serialized value remains `handy_keys`.
-- OpenRouter headers: `HTTP-Referer=https://github.com/ubranch/GigaType`, `User-Agent=GigaType/1.0 (+https://github.com/ubranch/GigaType)`, `X-Title=GigaType`.
+- OpenRouter headers: `HTTP-Referer=https://github.com/ubranch/gigatype`, `User-Agent=GigaType/1.0 (+https://github.com/ubranch/gigatype)`, `X-Title=GigaType`.
 - Default custom words: `["GigaType", "GigaAM"]`.
 - CUDA notice title: `GigaType CUDA 13 edition — third-party runtime notices`.
 
@@ -445,7 +445,7 @@ Get-ChildItem src/i18n/locales -Recurse -Filter translation.json | ForEach-Objec
 }
 ```
 
-Update bundled 0.9.0 release notes to call those features inherited from upstream and point issue reports to `https://github.com/ubranch/GigaType`.
+Update bundled 0.9.0 release notes to call those features inherited from upstream and point issue reports to `https://github.com/ubranch/gigatype`.
 
 - [ ] **Step 5: Verify and commit visual branding**
 
@@ -603,7 +603,7 @@ Document unsigned Windows warning accurately: verify release SHA256, then use Wi
 
 - [ ] **Step 2: Update BUILD.md with exact commands and outputs**
 
-Use clone URL `https://github.com/ubranch/GigaType.git`, directory `GigaType`, version `0.9.3-gigatype.1`, and the four exact output paths. Include:
+Use clone URL `https://github.com/ubranch/gigatype.git`, directory `gigatype`, version `0.9.3-gigatype.1`, and the four exact output paths. Include:
 
 ```powershell
 bun install
