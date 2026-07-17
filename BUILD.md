@@ -7,7 +7,7 @@ Windows x64 is the only packaged release target. macOS and Linux remain supporte
 ## Clone and version
 
 ```powershell
-git clone https://github.com/ubranch/GigaType.git
+git clone https://github.com/ubranch/gigatype.git
 cd GigaType
 ```
 

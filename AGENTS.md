@@ -6,7 +6,7 @@ this file defines repository-specific guidance for coding agents working on Giga
 
 GigaType is a private, unofficial fork of `cjpais/Handy`. public application, installer, repository, and documentation surfaces use `GigaType`; the source remains MIT-licensed and preserves upstream copyright and Git history.
 
-- repository: `https://github.com/ubranch/GigaType.git`
+- repository: `https://github.com/ubranch/gigatype.git`
 - current release version: `0.9.3-gigatype.1`
 - Tauri identifier: `io.github.ubranch.gigatype`
 - Windows executable: `GigaType.exe`
