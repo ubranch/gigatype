@@ -70,8 +70,15 @@ const OVERLAY_TOP_OFFSET: f64 = 4.0;
 #[cfg(target_os = "macos")]
 const OVERLAY_BOTTOM_OFFSET: f64 = 15.0;
 
-#[cfg(any(target_os = "windows", target_os = "linux"))]
+#[cfg(target_os = "windows")]
+const OVERLAY_BOTTOM_OFFSET: f64 = 12.0;
+
+#[cfg(target_os = "linux")]
 const OVERLAY_BOTTOM_OFFSET: f64 = 40.0;
+
+fn bottom_overlay_y(bottom: f64, height: f64) -> f64 {
+    bottom - height - OVERLAY_BOTTOM_OFFSET
+}
 
 #[cfg(target_os = "linux")]
 fn update_gtk_layer_shell_anchors(overlay_window: &tauri::webview::WebviewWindow) {
@@ -220,12 +227,11 @@ fn is_mouse_within_monitor(
 
 /// Returns overlay position in logical coordinates (points on macOS).
 ///
-/// The Bottom anchor uses the macOS work area (visibleFrame) so the overlay
-/// tracks the Dock — above it when shown, at the screen edge when hidden.
-/// This relies on tauri 2.11's work_area.position.y fix (#14655), the same
-/// bug that led PR #969 to abandon work_area for full monitor bounds. Top and
-/// the other platforms keep full monitor bounds plus the fixed offsets
-/// (work_area is unreliable on Wayland; Windows' offset clears the taskbar).
+/// The Bottom anchor uses the platform work area on macOS and Windows so the
+/// overlay clears the Dock or taskbar. This relies on tauri 2.11's macOS
+/// work_area.position.y fix (#14655), the same bug that led PR #969 to abandon
+/// work_area for full monitor bounds. Linux keeps full monitor bounds because
+/// work_area is unreliable on Wayland.
 ///
 /// We must use LogicalPosition (not PhysicalPosition) because Tauri/tao
 /// converts PhysicalPosition using the scale factor of the monitor the window
@@ -249,15 +255,15 @@ fn calculate_overlay_position(
         OverlayPosition::Bottom => {
             // work_area.position shares monitor.position's global coordinate
             // space, so no monitor offset is added.
-            #[cfg(target_os = "macos")]
+            #[cfg(any(target_os = "macos", target_os = "windows"))]
             let bottom = {
                 let wa = monitor.work_area();
                 (wa.position.y as f64 + wa.size.height as f64) / scale
             };
-            #[cfg(not(target_os = "macos"))]
+            #[cfg(target_os = "linux")]
             let bottom = monitor_y + monitor.size().height as f64 / scale;
 
-            bottom - height - OVERLAY_BOTTOM_OFFSET
+            bottom_overlay_y(bottom, height)
         }
     };
 
@@ -525,4 +531,14 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
     // eval_script call per callback, cutting the per-callback WebKit
     // dispatch work in half.
     let _ = app_handle.emit_to("recording_overlay", "mic-level", levels);
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod tests {
+    use super::bottom_overlay_y;
+
+    #[test]
+    fn windows_bottom_overlay_keeps_twelve_logical_pixels_above_work_area() {
+        assert_eq!(bottom_overlay_y(1040.0, 46.0), 982.0);
+    }
 }
