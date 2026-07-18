@@ -54,7 +54,7 @@
 /* ============================================================
    Unified overlay stage — one fixed, transparent container shared by the compact
    pill and the Live panel (both render the same `.scard` base). The card is
-   anchored one pixel inside the screen-edge side (bottom by default, top when
+   anchored two pixels inside the screen-edge side (bottom by default, top when
    placed up top) and centered horizontally. The inset keeps the rounded border
    inside the transparent WebView instead of clipping its antialiased edge.
    overlay.rs compensates for this inset to preserve the visible screen gap.
@@ -63,7 +63,7 @@
   position: fixed;
   inset: 0;
   box-sizing: border-box;
-  padding-block: 1px;
+  padding-block: 2px;
   display: flex;
   justify-content: center; /* horizontal centering, kept for both forms */
   align-items: flex-end; /* bottom placement: anchored to the bottom inset */

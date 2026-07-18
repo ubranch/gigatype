@@ -36,7 +36,7 @@ tauri_panel! {
 // Native overlay window sizes (logical points). One window is reused for every
 // state and resized in `show_overlay_state`; each size need only be at least as
 // large as the card it hosts (the `--ov-*` vars in RecordingOverlay.css). The
-// card is CSS-anchored one logical pixel inside the window edge so its rounded
+// card is CSS-anchored two logical pixels inside the window edge so its rounded
 // border is not clipped. Native offsets compensate for that inset, so visible
 // screen gaps remain unchanged. Keep these in sync with the CSS card geometry.
 //
@@ -61,7 +61,7 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
 
 static LAST_MIC_LEVEL_EMIT: AtomicU64 = AtomicU64::new(0);
 const EMIT_THROTTLE_MS: u64 = 33; // ~30 FPS
-const OVERLAY_EDGE_INSET: f64 = 1.0;
+const OVERLAY_EDGE_INSET: f64 = 2.0;
 
 #[cfg(target_os = "macos")]
 const OVERLAY_VISIBLE_TOP_GAP: f64 = 46.0;
