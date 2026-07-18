@@ -22,6 +22,7 @@
 ### Task 1: Lowercase Documentation Surface
 
 **Files:**
+
 - Modify: `README.md`
 - Modify: `BUILD.md`
 - Modify: `AGENTS.md`
@@ -32,12 +33,13 @@
 - Modify: `docs/superpowers/specs/2026-07-16-gigatype-private-fork-design.md`
 
 **Interfaces:**
+
 - Consumes: approved design in `docs/superpowers/specs/2026-07-17-lowercase-repository-surface-design.md`
 - Produces: lowercase README prose plus lowercase canonical repository URLs across tracked Markdown
 
 - [ ] **Step 1: Run the README casing validator and verify it fails**
 
-```powershell
+````powershell
 $lines = Get-Content -LiteralPath README.md
 $inFence = $false
 $violations = foreach ($line in $lines) {
@@ -48,7 +50,7 @@ $violations = foreach ($line in $lines) {
 }
 if (-not $violations) { throw 'expected uppercase README prose before transformation' }
 $violations | Select-Object -First 10
-```
+````
 
 Expected: output includes `# GigaType` and other uppercase prose.
 
@@ -56,7 +58,7 @@ Expected: output includes `# GigaType` and other uppercase prose.
 
 Run this one-time mechanical rewrite:
 
-```powershell
+````powershell
 $path = 'README.md'
 $lines = Get-Content -LiteralPath $path
 $inFence = $false
@@ -80,13 +82,13 @@ $result = foreach ($line in $lines) {
   $result,
   [Text.UTF8Encoding]::new($false)
 )
-```
+````
 
 Use `apply_patch` to normalize every tracked Markdown canonical repository URL to `https://github.com/ubranch/gigatype`, retaining historical prose and branding.
 
 - [ ] **Step 3: Validate lowercase prose and preserved contracts**
 
-```powershell
+````powershell
 $lines = Get-Content -LiteralPath README.md
 $inFence = $false
 $violations = foreach ($line in $lines) {
@@ -121,7 +123,7 @@ if ($LASTEXITCODE -ne 1) { throw "canonical URL check failed: $LASTEXITCODE" }
 $canonicalUrls = git grep -n 'https://github\.com/ubranch/gigatype' -- '*.md'
 if ($LASTEXITCODE -ne 0) { throw "lowercase canonical URL check failed: $LASTEXITCODE" }
 git diff --check
-```
+````
 
 Expected: no exception; tracked Markdown contains lowercase canonical repository URLs only; `git diff --check` exits `0`.
 
@@ -156,10 +158,12 @@ Expected: commit contains only the eight Task 1 files in `$task1Files`.
 ### Task 2: Rename Repository and Update Metadata
 
 **Files:**
+
 - Modify local Git remote config: `private`
 - Modify GitHub repository metadata: `ubranch/GigaType`
 
 **Interfaces:**
+
 - Consumes: committed documentation from Task 1
 - Produces: `ubranch/gigatype` with lowercase description/topics and updated local remote
 
@@ -209,9 +213,11 @@ Expected: `git@github.com:ubranch/gigatype.git`.
 ### Task 3: Verify Repository and Release Integrity
 
 **Files:**
+
 - Verify only; no file changes
 
 **Interfaces:**
+
 - Consumes: renamed repository and existing release `v0.9.3-gigatype.1`
 - Produces: current proof for metadata, branch, tag, assets, and worktree
 
