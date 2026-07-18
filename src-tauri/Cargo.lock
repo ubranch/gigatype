@@ -2203,7 +2203,7 @@ dependencies = [
 
 [[package]]
 name = "gigatype"
-version = "0.9.3-gigatype.1"
+version = "0.9.3-gigatype.2"
 dependencies = [
  "anyhow",
  "chrono",

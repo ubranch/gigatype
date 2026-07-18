@@ -23,8 +23,8 @@ if (-not (Test-Path -LiteralPath $cudaNoticeSource -PathType Leaf)) {
   throw "dedicated CUDA notice source is missing: $cudaNoticeSource"
 }
 $wixConfig = $appConfig.bundle.windows.PSObject.Properties["wix"]
-if (-not $wixConfig -or [string]$wixConfig.Value.version -ne "0.9.3.1") {
-  throw "tauri.conf.json must map release 0.9.3-gigatype.1 to MSI version 0.9.3.1"
+if (-not $wixConfig -or [string]$wixConfig.Value.version -ne "0.9.3.2") {
+  throw "tauri.conf.json must map release 0.9.3-gigatype.2 to MSI version 0.9.3.2"
 }
 
 $helperModule = Join-Path $PSScriptRoot "windows-package-helpers.ps1"
@@ -399,8 +399,8 @@ if ($plan.product_name -ne $productName -or $plan.version -ne $version -or
     $plan.executable -ne $executableName) {
   throw "CUDA build plan does not expose tauri product metadata"
 }
-if ($plan.artifacts.nsis -ne "GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe" -or
-    $plan.artifacts.msi -ne "GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi") {
+if ($plan.artifacts.nsis -ne "GigaType_0.9.3-gigatype.2_x64-cuda13-setup.exe" -or
+    $plan.artifacts.msi -ne "GigaType_0.9.3-gigatype.2_x64-cuda13_en-US.msi") {
   throw "unexpected CUDA release artifact names"
 }
 if ($plan.ort.version -ne "1.24.2") { throw "unexpected ORT version" }
@@ -439,8 +439,8 @@ if ($LASTEXITCODE -ne 0) {
 }
 $cpuPlan = $cpuPlanJson | ConvertFrom-Json
 if ($cpuPlan.edition -ne "cpu") { throw "unexpected CPU edition: $($cpuPlan.edition)" }
-if ($cpuPlan.artifacts.nsis -ne "GigaType_0.9.3-gigatype.1_x64-setup.exe" -or
-    $cpuPlan.artifacts.msi -ne "GigaType_0.9.3-gigatype.1_x64_en-US.msi") {
+if ($cpuPlan.artifacts.nsis -ne "GigaType_0.9.3-gigatype.2_x64-setup.exe" -or
+    $cpuPlan.artifacts.msi -ne "GigaType_0.9.3-gigatype.2_x64_en-US.msi") {
   throw "unexpected CPU release artifact names"
 }
 if ($cpuPlan.ort.asset -ne "onnxruntime-win-x64-1.24.2.zip") {

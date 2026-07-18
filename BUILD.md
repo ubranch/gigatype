@@ -1,6 +1,6 @@
 # Building GigaType
 
-this guide covers source development on Windows, macOS, and Linux, plus the release-gated Windows x64 CPU and NVIDIA CUDA 13 packages for version `0.9.3-gigatype.1`.
+this guide covers source development on Windows, macOS, and Linux, plus the release-gated Windows x64 CPU and NVIDIA CUDA 13 packages for version `0.9.3-gigatype.2`.
 
 Windows x64 is the only packaged release target. macOS and Linux remain supported source-development targets, but this release does not claim rebuilt or verified packages for them.
 
@@ -11,7 +11,7 @@ git clone https://github.com/ubranch/gigatype.git
 cd gigatype
 ```
 
-the package, Cargo, and Tauri versions must all remain `0.9.3-gigatype.1`. `src-tauri/tauri.conf.json` is the package scripts' source of truth for `productName`, version, executable name, and artifact names.
+the package, Cargo, and Tauri versions must all remain `0.9.3-gigatype.2`. `src-tauri/tauri.conf.json` is the package scripts' source of truth for `productName`, version, executable name, and artifact names.
 
 ## Cross-platform prerequisites
 
@@ -132,13 +132,13 @@ inspect immutable inputs and names without downloading or building:
 
 a successful CPU build writes:
 
-- `dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64-setup.exe`
-- `dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64_en-US.msi`
+- `dist/windows-cpu/GigaType_0.9.3-gigatype.2_x64-setup.exe`
+- `dist/windows-cpu/GigaType_0.9.3-gigatype.2_x64_en-US.msi`
 
 a successful CUDA verification build writes:
 
-- `dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe`
-- `dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi`
+- `dist/windows-cuda/GigaType_0.9.3-gigatype.2_x64-cuda13-setup.exe`
+- `dist/windows-cuda/GigaType_0.9.3-gigatype.2_x64-cuda13_en-US.msi`
 
 CUDA evidence is written under `dist/windows-cuda/verification/`, including artifact hashes, package audits, launch results, missing-provider proof, fixture metadata, benchmarks, and exact-PID VRAM evidence. `dist/`, installers, downloaded models, and caches are generated artifacts and must not be committed.
 
@@ -207,10 +207,10 @@ compute hashes only after every package gate passes and no further rebuild is pl
 
 ```powershell
 $assets = @(
-  "dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64-setup.exe",
-  "dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64_en-US.msi",
-  "dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe",
-  "dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi"
+  "dist/windows-cpu/GigaType_0.9.3-gigatype.2_x64-setup.exe",
+  "dist/windows-cpu/GigaType_0.9.3-gigatype.2_x64_en-US.msi",
+  "dist/windows-cuda/GigaType_0.9.3-gigatype.2_x64-cuda13-setup.exe",
+  "dist/windows-cuda/GigaType_0.9.3-gigatype.2_x64-cuda13_en-US.msi"
 )
 $assets | ForEach-Object {
   $file = Get-Item -LiteralPath $_

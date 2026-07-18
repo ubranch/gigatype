@@ -2,7 +2,7 @@
 
 > private, unofficial fork of `cjpais/Handy`. gigatype preserves upstream mit attribution and adds gigaam multilingual plus verified windows cuda packaging. it is not endorsed by or affiliated with upstream handy.
 
-gigatype is a local desktop speech-to-text application: press a shortcut, speak, and paste the transcription into the focused text field. version `0.9.3-gigatype.1` targets separate cpu and nvidia cuda 13 packages for windows x64.
+gigatype is a local desktop speech-to-text application: press a shortcut, speak, and paste the transcription into the focused text field. version `0.9.3-gigatype.2` targets separate cpu and nvidia cuda 13 packages for windows x64.
 
 ## what this fork adds
 
@@ -16,14 +16,14 @@ speech recognition, vad, history, and text insertion run locally. installers do 
 
 ## download: cpu or cuda
 
-when release `0.9.3-gigatype.1` is published, it targets the four windows x64 assets below. no packaged release is planned for other platforms.
+release `0.9.3-gigatype.2` targets the four windows x64 assets below. no packaged release is planned for other platforms.
 
 | edition | installer                                        | use it when                                                      |
 | ------- | ------------------------------------------------ | ---------------------------------------------------------------- |
-| cpu     | `GigaType_0.9.3-gigatype.1_x64-setup.exe`        | recommended for systems without a supported nvidia gpu           |
-| cpu     | `GigaType_0.9.3-gigatype.1_x64_en-US.msi`        | same cpu application in msi format                               |
-| cuda 13 | `GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe` | nvidia gpu package with app-local onnx runtime cuda 13 libraries |
-| cuda 13 | `GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi` | same cuda application in msi format                              |
+| cpu     | `GigaType_0.9.3-gigatype.2_x64-setup.exe`        | recommended for systems without a supported nvidia gpu           |
+| cpu     | `GigaType_0.9.3-gigatype.2_x64_en-US.msi`        | same cpu application in msi format                               |
+| cuda 13 | `GigaType_0.9.3-gigatype.2_x64-cuda13-setup.exe` | nvidia gpu package with app-local onnx runtime cuda 13 libraries |
+| cuda 13 | `GigaType_0.9.3-gigatype.2_x64-cuda13_en-US.msi` | same cuda application in msi format                              |
 
 choose one package format and one edition. the cpu edition is smaller and does not include cuda runtime libraries. the cuda edition requires a compatible nvidia display driver; cuda developer tools are not required.
 
@@ -52,8 +52,8 @@ the first model selection needs network access because model weights are not emb
 
 ## gigaam model guide
 
-| model                                | intended use                                                                        |                                 download size |
-| ------------------------------------ | ----------------------------------------------------------------------------------- | --------------------------------------------: |
+| model                                | intended use                                                                        |                                   download size |
+| ------------------------------------ | ----------------------------------------------------------------------------------- | ----------------------------------------------: |
 | `GigaAM Multilingual 220M INT8`      | recommended cpu model                                                               |                 about 214 `MiB` plus vocabulary |
 | `GigaAM Multilingual 220M FP32 CUDA` | recommended balanced gpu model                                                      |                 about 844 `MiB` plus vocabulary |
 | `GigaAM Multilingual 600M INT8`      | larger cpu model; use only when its extra memory and processing cost are acceptable |                 about 564 `MiB` plus vocabulary |
@@ -109,7 +109,7 @@ after a model is downloaded and verified, transcription can run without network 
 after publication, the authoritative hashes will be in the private release notes and will apply to the exact final asset names. for example:
 
 ```powershell
-$asset = Join-Path $env:USERPROFILE "Downloads\GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe"
+$asset = Join-Path $env:USERPROFILE "Downloads\GigaType_0.9.3-gigatype.2_x64-cuda13-setup.exe"
 (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
 ```
 
@@ -118,7 +118,7 @@ compare all 64 hexadecimal characters with the value beside the same filename in
 to inspect several downloaded assets:
 
 ```powershell
-Get-ChildItem (Join-Path $env:USERPROFILE "Downloads\GigaType_0.9.3-gigatype.1_x64*") -File |
+Get-ChildItem (Join-Path $env:USERPROFILE "Downloads\GigaType_0.9.3-gigatype.2_x64*") -File |
   Get-FileHash -Algorithm SHA256 |
   Format-Table Path, Hash
 ```
@@ -139,7 +139,7 @@ Get-ChildItem (Join-Path $env:USERPROFILE "Downloads\GigaType_0.9.3-gigatype.1_x
 
 ## build from source
 
-see [`BUILD.md`](BUILD.md) for exact prerequisites, clone commands, pinned runtime inputs, cpu/cuda package gates, and output paths. source development remains cross-platform, but `0.9.3-gigatype.1` targets packaged releases only for windows x64 when published.
+see [`BUILD.md`](BUILD.md) for exact prerequisites, clone commands, pinned runtime inputs, cpu/cuda package gates, and output paths. source development remains cross-platform, but `0.9.3-gigatype.2` targets packaged releases only for windows x64.
 
 ## repository layout
 

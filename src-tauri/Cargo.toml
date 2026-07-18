@@ -1,6 +1,6 @@
 [package]
 name = "gigatype"
-version = "0.9.3-gigatype.1"
+version = "0.9.3-gigatype.2"
 description = "GigaType"
 authors = ["cjpais", "ubranch"]
 edition = "2021"

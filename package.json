@@ -1,7 +1,7 @@
 {
   "name": "gigatype-app",
   "private": true,
-  "version": "0.9.3-gigatype.1",
+  "version": "0.9.3-gigatype.2",
   "type": "module",
   "scripts": {
     "dev": "vite",

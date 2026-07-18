@@ -61,12 +61,12 @@ if (-not $?) { throw "CUDA verification plan failed" }
 $plan = $planJson | ConvertFrom-Json
 
 if ($plan.product_name -ne "GigaType" -or
-    $plan.version -ne "0.9.3-gigatype.1" -or
+    $plan.version -ne "0.9.3-gigatype.2" -or
     $plan.executable -ne "GigaType.exe") {
   throw "verification plan does not expose tauri product metadata"
 }
-if ($plan.artifacts.nsis -ne "GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe" -or
-    $plan.artifacts.msi -ne "GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi") {
+if ($plan.artifacts.nsis -ne "GigaType_0.9.3-gigatype.2_x64-cuda13-setup.exe" -or
+    $plan.artifacts.msi -ne "GigaType_0.9.3-gigatype.2_x64-cuda13_en-US.msi") {
   throw "unexpected verification artifact names"
 }
 if ($plan.repeat -ne 3) { throw "verification requires exactly 3 measured runs by default" }

@@ -7,7 +7,7 @@ this file defines repository-specific guidance for coding agents working on Giga
 GigaType is a private, unofficial fork of `cjpais/Handy`. public application, installer, repository, and documentation surfaces use `GigaType`; the source remains MIT-licensed and preserves upstream copyright and Git history.
 
 - repository: `https://github.com/ubranch/gigatype.git`
-- current release version: `0.9.3-gigatype.1`
+- current release version: `0.9.3-gigatype.2`
 - Tauri identifier: `io.github.ubranch.gigatype`
 - Windows executable: `GigaType.exe`
 - packaged release target: Windows x64 only, in separate CPU and CUDA 13 editions
@@ -44,8 +44,8 @@ do not run an expensive production/package build unless the task requires packag
 
 expected package paths:
 
-- `dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64-setup.exe`
-- `dist/windows-cpu/GigaType_0.9.3-gigatype.1_x64_en-US.msi`
+- `dist/windows-cpu/GigaType_0.9.3-gigatype.2_x64-setup.exe`
+- `dist/windows-cpu/GigaType_0.9.3-gigatype.2_x64_en-US.msi`
 
 ### Windows CUDA validation
 
@@ -59,8 +59,8 @@ expected package paths:
 
 expected package paths:
 
-- `dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13-setup.exe`
-- `dist/windows-cuda/GigaType_0.9.3-gigatype.1_x64-cuda13_en-US.msi`
+- `dist/windows-cuda/GigaType_0.9.3-gigatype.2_x64-cuda13-setup.exe`
+- `dist/windows-cuda/GigaType_0.9.3-gigatype.2_x64-cuda13_en-US.msi`
 
 contract tests and `Plan` mode prove configuration and command contracts only; they provide no package or runtime proof. `scripts/build-windows-cuda.ps1 -Mode Audit` proves package content for supplied artifacts. `scripts/verify-windows-cuda.ps1 -Mode Verify` proves runtime behavior for supplied installers. build-script `All` builds and audits the selected edition; verifier `All` builds, audits, and verifies the CUDA edition end to end. all evidence applies only to the exact artifacts and machine tested.
 

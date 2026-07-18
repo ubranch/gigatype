@@ -24,12 +24,12 @@ describe("GigaType branding contract", () => {
 
     expect(tauri.productName).toBe("GigaType");
     expect(tauri.mainBinaryName).toBe("GigaType");
-    expect(tauri.version).toBe("0.9.3-gigatype.1");
+    expect(tauri.version).toBe("0.9.3-gigatype.2");
     expect(tauri.identifier).toBe("io.github.ubranch.gigatype");
     expect(tauri.bundle.createUpdaterArtifacts).toBe(false);
     expect(tauri.bundle.windows.signCommand).toBeUndefined();
     expect(packageJson.name).toBe("gigatype-app");
-    expect(packageJson.version).toBe("0.9.3-gigatype.1");
+    expect(packageJson.version).toBe("0.9.3-gigatype.2");
     expect(cargo).toContain('name = "gigatype"');
     expect(cargo).toContain('name = "gigatype_app_lib"');
   });
