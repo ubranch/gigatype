@@ -36,9 +36,9 @@ tauri_panel! {
 // Native overlay window sizes (logical points). One window is reused for every
 // state and resized in `show_overlay_state`; each size need only be at least as
 // large as the card it hosts (the `--ov-*` vars in RecordingOverlay.css). The
-// card is CSS-anchored flush to the screen edge, so window height doesn't move
-// where the card sits — only OVERLAY_TOP_OFFSET / OVERLAY_BOTTOM_OFFSET do. Keep
-// these in sync with the CSS card geometry.
+// card is CSS-anchored one logical pixel inside the window edge so its rounded
+// border is not clipped. Native offsets compensate for that inset, so visible
+// screen gaps remain unchanged. Keep these in sync with the CSS card geometry.
 //
 // Compact overlay (Minimal / transcribing / processing): the 40h pill animates
 // width from 172 (--ov-rest-w) to 216 (--ov-work-w) and expands from center, so
@@ -61,20 +61,23 @@ fn overlay_dimensions(state: &str) -> (f64, f64) {
 
 static LAST_MIC_LEVEL_EMIT: AtomicU64 = AtomicU64::new(0);
 const EMIT_THROTTLE_MS: u64 = 33; // ~30 FPS
+const OVERLAY_EDGE_INSET: f64 = 1.0;
 
 #[cfg(target_os = "macos")]
-const OVERLAY_TOP_OFFSET: f64 = 46.0;
+const OVERLAY_VISIBLE_TOP_GAP: f64 = 46.0;
 #[cfg(any(target_os = "windows", target_os = "linux"))]
-const OVERLAY_TOP_OFFSET: f64 = 4.0;
+const OVERLAY_VISIBLE_TOP_GAP: f64 = 4.0;
+const OVERLAY_TOP_OFFSET: f64 = OVERLAY_VISIBLE_TOP_GAP - OVERLAY_EDGE_INSET;
 
 #[cfg(target_os = "macos")]
-const OVERLAY_BOTTOM_OFFSET: f64 = 15.0;
+const OVERLAY_VISIBLE_BOTTOM_GAP: f64 = 15.0;
 
 #[cfg(target_os = "windows")]
-const OVERLAY_BOTTOM_OFFSET: f64 = 12.0;
+const OVERLAY_VISIBLE_BOTTOM_GAP: f64 = 12.0;
 
 #[cfg(target_os = "linux")]
-const OVERLAY_BOTTOM_OFFSET: f64 = 40.0;
+const OVERLAY_VISIBLE_BOTTOM_GAP: f64 = 40.0;
+const OVERLAY_BOTTOM_OFFSET: f64 = OVERLAY_VISIBLE_BOTTOM_GAP - OVERLAY_EDGE_INSET;
 
 fn bottom_overlay_y(bottom: f64, height: f64) -> f64 {
     bottom - height - OVERLAY_BOTTOM_OFFSET
@@ -535,10 +538,15 @@ pub fn emit_levels(app_handle: &AppHandle, levels: &[f32]) {
 
 #[cfg(all(test, target_os = "windows"))]
 mod tests {
-    use super::bottom_overlay_y;
+    use super::{bottom_overlay_y, OVERLAY_EDGE_INSET};
 
     #[test]
     fn windows_bottom_overlay_keeps_twelve_logical_pixels_above_work_area() {
-        assert_eq!(bottom_overlay_y(1040.0, 46.0), 982.0);
+        let work_area_bottom = 1040.0;
+        let window_height = 46.0;
+        let window_y = bottom_overlay_y(work_area_bottom, window_height);
+        let card_bottom = window_y + window_height - OVERLAY_EDGE_INSET;
+
+        assert_eq!(work_area_bottom - card_bottom, 12.0);
     }
 }

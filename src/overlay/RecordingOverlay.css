@@ -54,22 +54,23 @@
 /* ============================================================
    Unified overlay stage — one fixed, transparent container shared by the compact
    pill and the Live panel (both render the same `.scard` base). The card is
-   anchored flush to the screen-edge side (bottom by default, top when placed up
-   top) and centered horizontally, so the visible card sits exactly
-   OVERLAY_*_OFFSET from the screen edge regardless of window height — only the
-   offsets in overlay.rs move it. Pops scale from that edge, so the card is never
-   drawn past it (matters for the 4px top offset on Windows/Linux).
+   anchored one pixel inside the screen-edge side (bottom by default, top when
+   placed up top) and centered horizontally. The inset keeps the rounded border
+   inside the transparent WebView instead of clipping its antialiased edge.
+   overlay.rs compensates for this inset to preserve the visible screen gap.
    ============================================================ */
 .ov-stage {
   position: fixed;
   inset: 0;
+  box-sizing: border-box;
+  padding-block: 1px;
   display: flex;
   justify-content: center; /* horizontal centering, kept for both forms */
-  align-items: flex-end; /* bottom placement: flush to the bottom edge */
+  align-items: flex-end; /* bottom placement: anchored to the bottom inset */
   font-family: var(--s-font);
 }
 .ov-stage.top {
-  align-items: flex-start; /* top placement: flush to the top edge */
+  align-items: flex-start; /* top placement: anchored to the top inset */
 }
 
 /* Compact pill: fade the whole container in/out (the pill itself never pops or
