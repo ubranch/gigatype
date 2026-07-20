@@ -1,15 +1,26 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
-  <path
-    d="M84 43a32 32 0 1 0 4 42V66H65"
-    stroke="#FFFFFF"
-    stroke-width="10"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
-  <path
-    d="M43 57v14M53 51v26M63 57v14"
-    stroke="#FFFFFF"
-    stroke-width="5"
-    stroke-linecap="round"
-  />
+  <g data-brand="magic-mic" stroke="#FFFFFF">
+    <path
+      data-part="mic-body"
+      d="M64 16c-12 0-21 9-21 21v24c0 12 9 21 21 21s21-9 21-21V37c0-12-9-21-21-21Z"
+      stroke-width="7"
+      stroke-linejoin="round"
+    />
+    <g data-part="face" fill="#FFFFFF" stroke="none">
+      <circle cx="56" cy="45" r="3" />
+      <circle cx="72" cy="45" r="3" />
+      <path
+        d="M56 57c4 5 12 5 16 0"
+        fill="none"
+        stroke="#FFFFFF"
+        stroke-width="3"
+        stroke-linecap="round"
+      />
+    </g>
+    <path
+      d="M29 57v4c0 23 16 41 35 41s35-18 35-41v-4M64 102v13M49 116h30"
+      stroke-width="7"
+      stroke-linecap="round"
+    />
+  </g>
 </svg>

@@ -13,6 +13,7 @@ const readPngHeader = (path: string) => {
     signature: bytes.subarray(0, 8).toString("hex"),
     width: bytes.readUInt32BE(16),
     height: bytes.readUInt32BE(20),
+    colorType: bytes[25],
   };
 };
 
@@ -107,6 +108,20 @@ describe("GigaType branding contract", () => {
     expect(headers).toContain("https://github.com/ubranch/GigaType");
   });
 
+  test("uses the generated Magic Mic master and matching source identity", () => {
+    const master = readPngHeader("src-tauri/icons/gigatype-magic-mic.png");
+    const appIcon = read("src-tauri/icons/gigatype.svg");
+    const reactMark = read("src/components/icons/GigaTypeMark.tsx");
+
+    expect(master.signature).toBe("89504e470d0a1a0a");
+    expect(master.width).toBe(master.height);
+    expect(master.colorType).toBe(6);
+    expect(appIcon).toContain('data-brand="magic-mic"');
+    expect(reactMark).toContain('data-brand="magic-mic"');
+    expect(appIcon).not.toContain("M690 338A264 264 0 1 0 724 684V526H532");
+    expect(reactMark).not.toContain("M84 43a32 32 0 1 0 4 42V66H65");
+  });
+
   test("uses generated GigaType sources and rasters for every idle tray theme", () => {
     const tray = read("src-tauri/src/tray.rs");
     const assets = [
@@ -132,13 +147,17 @@ describe("GigaType branding contract", () => {
       expect(existsSync(join(root, raster))).toBe(true);
       expect(read(source)).toContain('viewBox="0 0 128 128"');
       expect(read(source)).not.toContain("<rect");
-      expect(read(source)).toContain("M84 43a32 32 0 1 0 4 42V66H65");
-      expect(read(source)).toContain("M43 57v14M53 51v26M63 57v14");
+      expect(read(source)).toContain('data-brand="magic-mic"');
+      expect(read(source)).toContain('data-part="mic-body"');
+      expect(read(source)).toContain('data-part="face"');
+      expect(read(source)).not.toContain("M84 43a32 32 0 1 0 4 42V66H65");
+      expect(read(source)).not.toContain("M43 57v14M53 51v26M63 57v14");
       for (const color of colors) expect(read(source)).toContain(color);
       expect(readPngHeader(raster)).toEqual({
         signature: "89504e470d0a1a0a",
         width: 64,
         height: 64,
+        colorType: 6,
       });
     }
 

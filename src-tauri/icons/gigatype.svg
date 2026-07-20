@@ -1,11 +1,95 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
   <defs>
-    <linearGradient id="bg" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#F59AC4"/>
-      <stop offset="1" stop-color="#B85BE8"/>
+    <linearGradient
+      id="bg"
+      x1="128"
+      y1="96"
+      x2="896"
+      y2="928"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop stop-color="#F59AC4" />
+      <stop offset="1" stop-color="#B85BE8" />
+    </linearGradient>
+    <linearGradient
+      id="accent"
+      x1="252"
+      y1="412"
+      x2="760"
+      y2="920"
+      gradientUnits="userSpaceOnUse"
+    >
+      <stop stop-color="#F59AC4" />
+      <stop offset="1" stop-color="#B85BE8" />
     </linearGradient>
   </defs>
-  <rect width="1024" height="1024" rx="240" fill="url(#bg)"/>
-  <path d="M690 338A264 264 0 1 0 724 684V526H532" fill="none" stroke="#2D1F2A" stroke-width="82" stroke-linecap="round" stroke-linejoin="round"/>
-  <path d="M356 454v116M434 408v208M512 454v116" fill="none" stroke="#2D1F2A" stroke-width="42" stroke-linecap="round"/>
+  <rect width="1024" height="1024" rx="240" fill="url(#bg)" />
+  <g data-brand="magic-mic">
+    <path
+      d="M216 418v88c0 190 132 336 296 336s296-146 296-336v-88"
+      fill="none"
+      stroke="#2D1F2A"
+      stroke-width="70"
+      stroke-linecap="round"
+    />
+    <path
+      d="M216 418v88c0 190 132 336 296 336s296-146 296-336v-88"
+      fill="none"
+      stroke="url(#accent)"
+      stroke-width="30"
+      stroke-linecap="round"
+    />
+    <path
+      d="M512 842v70"
+      fill="none"
+      stroke="#2D1F2A"
+      stroke-width="70"
+      stroke-linecap="round"
+    />
+    <path
+      d="M512 842v70"
+      fill="none"
+      stroke="url(#accent)"
+      stroke-width="30"
+      stroke-linecap="round"
+    />
+    <path
+      d="M410 916c40-36 164-36 204 0 16 14 9 36-12 42-54 16-126 16-180 0-21-6-28-28-12-42Z"
+      fill="url(#accent)"
+      stroke="#2D1F2A"
+      stroke-width="28"
+      stroke-linejoin="round"
+    />
+    <rect
+      data-part="mic-body"
+      x="322"
+      y="150"
+      width="380"
+      height="500"
+      rx="190"
+      fill="#FFF8FB"
+      stroke="#2D1F2A"
+      stroke-width="58"
+    />
+    <g data-part="face">
+      <circle cx="435" cy="365" r="28" fill="#2D1F2A" />
+      <circle cx="589" cy="365" r="28" fill="#2D1F2A" />
+      <ellipse cx="424" cy="456" rx="42" ry="25" fill="#F59AC4" />
+      <ellipse cx="600" cy="456" rx="42" ry="25" fill="#F59AC4" />
+      <path
+        d="M458 442c32 44 76 44 108 0"
+        fill="none"
+        stroke="#2D1F2A"
+        stroke-width="30"
+        stroke-linecap="round"
+      />
+    </g>
+    <path
+      d="m820 90 22 54 54 22-54 22-22 54-22-54-54-22 54-22 22-54Z"
+      fill="#F59AC4"
+      stroke="#2D1F2A"
+      stroke-width="24"
+      stroke-linejoin="round"
+    />
+  </g>
 </svg>
