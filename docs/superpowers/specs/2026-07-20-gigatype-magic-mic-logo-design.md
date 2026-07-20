@@ -25,7 +25,7 @@ use built-in `image_gen` in `logo-brand` mode to generate one centered square ma
 copy the selected generated source into `tmp/imagegen/`, then run the installed Python helper:
 
 ```powershell
-python C:\Users\inspire\.codex\skills\.system\imagegen\scripts\remove_chroma_key.py `
+uv run --with pillow python C:\Users\inspire\.codex\skills\.system\imagegen\scripts\remove_chroma_key.py `
   --input tmp/imagegen/gigatype-magic-mic-chroma.png `
   --out src-tauri/icons/gigatype-magic-mic.png `
   --auto-key border `

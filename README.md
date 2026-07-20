@@ -1,4 +1,14 @@
-# gigatype
+<p align="center">
+  <a href="src-tauri/icons/icon.png">
+    <img src="src-tauri/icons/icon.png" alt="GigaType Magic Mic app icon" width="160">
+  </a>
+  &nbsp;&nbsp;&nbsp;
+  <a href="src-tauri/icons/gigatype-magic-mic.png">
+    <img src="src-tauri/icons/gigatype-magic-mic.png" alt="GigaType Magic Mic transparent logo" width="220">
+  </a>
+</p>
+
+<h1 align="center">GigaType</h1>
 
 > private, unofficial fork of `cjpais/Handy`. gigatype preserves upstream mit attribution and adds gigaam multilingual plus verified windows cuda packaging. it is not endorsed by or affiliated with upstream handy.
 
